@@ -5,9 +5,15 @@
  */
 
 buildscript {
+    ext {
+        kotlin_version = '2.4.20'
+    }
     repositories {
         mavenCentral()
         google()
+    }
+    dependencies {
+        classpath 'org.jetbrains.kotlin:kotlin-gradle-plugin:2.3.10'
     }
 }
 
@@ -24,6 +30,8 @@ allprojects {
     repositories {
         mavenCentral()
         google()
+        maven { url = "https://maven.rowanmcalpin.com/" }
+        maven { url = "https://repo.dairy.foundation/releases" }
     }
 }
 

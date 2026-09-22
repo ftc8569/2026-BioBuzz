@@ -3,9 +3,9 @@ package org.firstinspires.ftc.teamcode.teleop
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp
 import com.qualcomm.robotcore.hardware.DcMotor
 import com.qualcomm.robotcore.hardware.DcMotorSimple
-import dev.nextftc.core.components.SubsystemComponent
 import dev.nextftc.ftc.NextFTCOpMode
 import dev.nextftc.ftc.components.BulkReadComponent
+import dev.nextftc.core.components.SubsystemComponent
 import org.firstinspires.ftc.teamcode.Subsytem.IntakeSubsystem
 import org.firstinspires.ftc.teamcode.Subsytem.ShooterSubsystem
 
