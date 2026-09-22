@@ -1,4 +1,5 @@
 apply plugin: 'com.android.application'
+apply plugin: 'org.jetbrains.kotlin.android'
 
 //
 // build.gradle in TeamCode
@@ -19,6 +20,10 @@ apply from: '../build.dependencies.gradle'
 android {
     namespace = 'org.firstinspires.ftc.teamcode'
 
+    kotlinOptions {
+        jvmTarget = '1.8'
+    }
+
     packagingOptions {
         jniLibs.useLegacyPackaging true
     }
@@ -26,4 +31,6 @@ android {
 
 dependencies {
     implementation project(':FtcRobotController')
+    implementation 'dev.nextftc:ftc:1.0.0'
+    implementation 'org.jetbrains.kotlin:kotlin-stdlib:2.2.20'
 }
