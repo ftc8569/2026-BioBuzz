@@ -25,6 +25,7 @@ class ShooterSubsystem(hardwareMap: HardwareMap) : Subsystem {
         private set
     val flywheelPower1: Double get() = shooter1.power
     val flywheelPower2: Double get() = shooter2.power
+    val blockerCommandedPosition: Double get() = blocker.position
     var atSpeed = false
         private set
 

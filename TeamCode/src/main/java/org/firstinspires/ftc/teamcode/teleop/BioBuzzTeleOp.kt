@@ -79,11 +79,10 @@ class BioBuzzTeleOp : NextFTCOpMode() {
             else -> 0.0
         }
 
-        val shooterReady = if (currentShooterPower > 0.0) {
+        if (currentShooterPower > 0.0) {
             shooter.updateShot(currentShooterPower)
         } else {
             shooter.setFlywheelPower(currentShooterPower)
-            false
         }
 
         val manualIntakePower = when {
@@ -94,10 +93,8 @@ class BioBuzzTeleOp : NextFTCOpMode() {
 
         currentIntakePower = when {
             gamepad1.a -> 0.0
-            currentShooterPower > 0.0 && !shooterReady -> 0.0
+            currentShooterPower != 0.0 -> currentShooterPower
             manualIntakePower != 0.0 -> manualIntakePower
-            currentShooterPower > 0.0 && shooterReady -> currentShooterPower
-            currentShooterPower < 0.0 -> currentShooterPower
             else -> 0.0
         }
 
@@ -110,6 +107,7 @@ class BioBuzzTeleOp : NextFTCOpMode() {
         telemetry.addData("Shooter requested power", "%.2f", currentShooterPower)
         telemetry.addData("Shooter motor power 1 / 2", "%.2f / %.2f", shooter.flywheelPower1, shooter.flywheelPower2)
         telemetry.addData("Shooter at speed / blocker open", shooter.atSpeed)
+        telemetry.addData("Blocker commanded position", "%.2f", shooter.blockerCommandedPosition)
         telemetry.addData("Flywheel 1 ticks/s", "%.0f / %.0f", shooter.measuredSpeed1, shooter.targetSpeed1)
         telemetry.addData("Flywheel 2 ticks/s", "%.0f / %.0f", shooter.measuredSpeed2, shooter.targetSpeed2)
         telemetry.update()
