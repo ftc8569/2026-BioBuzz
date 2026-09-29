@@ -106,8 +106,9 @@ class BioBuzzTeleOp : NextFTCOpMode() {
 
     override fun onUpdate() {
         telemetry.addData("Intake Power", currentIntakePower)
-        telemetry.addData("Shooter Power", currentShooterPower)
-        telemetry.addData("Preset (G2 up/down)", "%.2f", shooterPreset)
+        telemetry.addData("Shooter preset (G2 up/down)", "%.2f", shooterPreset)
+        telemetry.addData("Shooter requested power", "%.2f", currentShooterPower)
+        telemetry.addData("Shooter motor power 1 / 2", "%.2f / %.2f", shooter.flywheelPower1, shooter.flywheelPower2)
         telemetry.addData("Shooter at speed / blocker open", shooter.atSpeed)
         telemetry.addData("Flywheel 1 ticks/s", "%.0f / %.0f", shooter.measuredSpeed1, shooter.targetSpeed1)
         telemetry.addData("Flywheel 2 ticks/s", "%.0f / %.0f", shooter.measuredSpeed2, shooter.targetSpeed2)

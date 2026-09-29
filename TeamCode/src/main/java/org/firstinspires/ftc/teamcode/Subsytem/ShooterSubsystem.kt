@@ -23,6 +23,8 @@ class ShooterSubsystem(hardwareMap: HardwareMap) : Subsystem {
         private set
     var measuredSpeed2 = 0.0
         private set
+    val flywheelPower1: Double get() = shooter1.power
+    val flywheelPower2: Double get() = shooter2.power
     var atSpeed = false
         private set
 
