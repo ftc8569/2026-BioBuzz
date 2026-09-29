@@ -35,8 +35,8 @@ class ShooterSubsystem(hardwareMap: HardwareMap) : Subsystem {
     companion object {
         private const val READY_SPEED_FRACTION = 0.95
         private const val READY_HOLD_NANOS = 200_000_000L
-        private const val BLOCKER_OPEN = 0.24
-        private const val BLOCKER_CLOSED = 0.45
+        private const val BLOCKER_OPEN = 0.45
+        private const val BLOCKER_CLOSED = 0.24
     }
 
     init {

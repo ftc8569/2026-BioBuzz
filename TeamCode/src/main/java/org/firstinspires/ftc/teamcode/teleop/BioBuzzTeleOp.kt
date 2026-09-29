@@ -1,11 +1,8 @@
 package org.firstinspires.ftc.teamcode.teleop
 
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp
-import dev.nextftc.bindings.BindingManager
 import dev.nextftc.core.commands.utility.LambdaCommand
-import dev.nextftc.core.components.Component
 import dev.nextftc.core.components.SubsystemComponent
-import dev.nextftc.ftc.Gamepads
 import dev.nextftc.ftc.NextFTCOpMode
 import dev.nextftc.ftc.components.BulkReadComponent
 import org.firstinspires.ftc.teamcode.Subsytem.DriveSubsystem
@@ -20,13 +17,8 @@ class BioBuzzTeleOp : NextFTCOpMode() {
     private var shooterPreset = 0.80
     private var currentShooterPower = 0.0
     private var currentIntakePower = 0.0
-
-    // NextFTC 1.0.0 runs component preUpdate before scheduled commands.
-    // Update gamepad bindings here so selections apply in the same loop.
-    private val bindingComponent = object : Component {
-        override fun preUpdate() = BindingManager.update()
-        override fun postStop() = BindingManager.reset()
-    }
+    private var previousDpadUp = false
+    private var previousDpadDown = false
 
     override fun onInit() {
         drive = DriveSubsystem(hardwareMap)
@@ -34,18 +26,11 @@ class BioBuzzTeleOp : NextFTCOpMode() {
         shooter = ShooterSubsystem(hardwareMap)
         addComponents(
             BulkReadComponent,
-            bindingComponent,
             SubsystemComponent(drive, intake, shooter)
         )
     }
 
     override fun onStartButtonPressed() {
-        Gamepads.gamepad2.dpadUp.whenBecomesTrue {
-            shooterPreset = (shooterPreset + 0.02).coerceAtMost(1.0)
-        }
-        Gamepads.gamepad2.dpadDown.whenBecomesTrue {
-            shooterPreset = (shooterPreset - 0.02).coerceAtLeast(0.0)
-        }
         LambdaCommand("Driver control")
             .setIsDone { false }
             .setUpdate { updateDrive() }
@@ -73,6 +58,17 @@ class BioBuzzTeleOp : NextFTCOpMode() {
     }
 
     private fun updateMechanisms() {
+        val dpadUp = gamepad1.dpad_up || gamepad2.dpad_up
+        val dpadDown = gamepad1.dpad_down || gamepad2.dpad_down
+        if (dpadUp && !previousDpadUp && !dpadDown) {
+            shooterPreset = (shooterPreset + 0.02).coerceAtMost(1.0)
+        }
+        if (dpadDown && !previousDpadDown && !dpadUp) {
+            shooterPreset = (shooterPreset - 0.02).coerceAtLeast(0.0)
+        }
+        previousDpadUp = dpadUp
+        previousDpadDown = dpadDown
+
         currentShooterPower = when {
             gamepad1.left_bumper -> -0.8
             gamepad1.right_bumper -> shooterPreset
@@ -103,7 +99,7 @@ class BioBuzzTeleOp : NextFTCOpMode() {
 
     override fun onUpdate() {
         telemetry.addData("Intake Power", currentIntakePower)
-        telemetry.addData("Shooter preset (G2 up/down)", "%.2f", shooterPreset)
+        telemetry.addData("Shooter preset (G1/G2 up/down)", "%.2f", shooterPreset)
         telemetry.addData("Shooter requested power", "%.2f", currentShooterPower)
         telemetry.addData("Shooter motor power 1 / 2", "%.2f / %.2f", shooter.flywheelPower1, shooter.flywheelPower2)
         telemetry.addData("Shooter at speed / blocker open", shooter.atSpeed)
