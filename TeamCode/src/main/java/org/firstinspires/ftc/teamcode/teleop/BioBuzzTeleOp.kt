@@ -14,7 +14,8 @@ class BioBuzzTeleOp : NextFTCOpMode() {
     private lateinit var drive: DriveSubsystem
     private lateinit var intake: IntakeSubsystem
     private lateinit var shooter: ShooterSubsystem
-    private var shooterPreset = 0.80
+    private var shooterPresetSteps = 40
+    private val shooterPreset: Double get() = shooterPresetSteps * 0.02
     private var currentShooterPower = 0.0
     private var currentIntakePower = 0.0
     private var previousDpadUp = false
@@ -61,10 +62,10 @@ class BioBuzzTeleOp : NextFTCOpMode() {
         val dpadUp = gamepad1.dpad_up || gamepad2.dpad_up
         val dpadDown = gamepad1.dpad_down || gamepad2.dpad_down
         if (dpadUp && !previousDpadUp && !dpadDown) {
-            shooterPreset = (shooterPreset + 0.02).coerceAtMost(1.0)
+            shooterPresetSteps = (shooterPresetSteps + 1).coerceAtMost(50)
         }
         if (dpadDown && !previousDpadDown && !dpadUp) {
-            shooterPreset = (shooterPreset - 0.02).coerceAtLeast(0.0)
+            shooterPresetSteps = (shooterPresetSteps - 1).coerceAtLeast(0)
         }
         previousDpadUp = dpadUp
         previousDpadDown = dpadDown
@@ -100,6 +101,7 @@ class BioBuzzTeleOp : NextFTCOpMode() {
     override fun onUpdate() {
         telemetry.addData("Intake Power", currentIntakePower)
         telemetry.addData("Shooter preset (G1/G2 up/down)", "%.2f", shooterPreset)
+        telemetry.addData("D-pad seen (up/down)", "%s / %s", gamepad1.dpad_up || gamepad2.dpad_up, gamepad1.dpad_down || gamepad2.dpad_down)
         telemetry.addData("Shooter requested power", "%.2f", currentShooterPower)
         telemetry.addData("Shooter motor power 1 / 2", "%.2f / %.2f", shooter.flywheelPower1, shooter.flywheelPower2)
         telemetry.addData("Shooter at speed / blocker open", shooter.atSpeed)
