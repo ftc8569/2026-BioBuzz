@@ -17,6 +17,27 @@ If you are new to robotics or new to the *FIRST* Tech Challenge, then you should
 
 Even if you are an advanced Java programmer, it is helpful to start with the [FTC Blocks tutorial](https://ftc-docs.firstinspires.org/programming_resources/blocks/Blocks-Tutorial.html), and then migrate to the [OnBot Java Tool](https://ftc-docs.firstinspires.org/programming_resources/onbot_java/OnBot-Java-Tutorial.html) or to [Android Studio](https://ftc-docs.firstinspires.org/programming_resources/android_studio_java/Android-Studio-Tutorial.html) afterwards.
 
+### Fast TeamCode deployment with Sloth
+
+This project includes Sloth hot reload for quick TeamCode iteration. After a
+normal `installDebug` has placed the Sloth runtime on the Control Hub, deploy
+TeamCode-only changes with:
+
+```text
+gradlew :TeamCode:deploySloth
+```
+
+Sloth uploads only classes under `org.firstinspires.ftc.teamcode` and applies
+them when the current OpMode ends. Changes to Gradle files, dependencies, the
+FTC SDK, or other packages still require a normal full install:
+
+```text
+gradlew :TeamCode:installDebug
+```
+
+Do not use `deploySloth` as a substitute for the first full install after
+adding or upgrading Sloth.
+
 ## Downloading the Project
 If you are an Android Studio programmer, there are several ways to download this repo.  Note that if you use the Blocks or OnBot Java Tool to program your robot, then you do not need to download this repository.
 

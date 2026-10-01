@@ -12,10 +12,24 @@ apply plugin: 'com.android.application'
 
 // Custom definitions may go here
 
+// SlothLoad adds deploySloth, which hot-reloads TeamCode classes to the robot
+// without reinstalling the full Robot Controller APK.
+buildscript {
+    repositories {
+        mavenCentral()
+        google()
+        maven { url = "https://repo.dairy.foundation/releases" }
+    }
+    dependencies {
+        classpath "dev.frozenmilk:Load:0.3.2"
+    }
+}
+
 // Include common definitions from above.
 apply from: '../build.common.gradle'
 apply from: '../build.dependencies.gradle'
 apply plugin: 'org.jetbrains.kotlin.android'
+apply plugin: 'dev.frozenmilk.sinister.sloth.load'
 
 android {
     namespace = 'org.firstinspires.ftc.teamcode'
@@ -34,4 +48,6 @@ dependencies {
     // NextFTC dependencies
     implementation 'dev.nextftc:ftc:1.1.0'
     implementation 'dev.nextftc:core:1.1.0'
+    // Sloth runtime required by the deploySloth hot-reload task.
+    implementation 'dev.frozenmilk.sinister:Sloth:0.3.2'
 }
