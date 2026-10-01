@@ -30,6 +30,8 @@ class ShooterSubsystem(hardwareMap: HardwareMap) : Subsystem {
     val blockerCommandedPosition: Double get() = blocker.position
     var atSpeed = false
         private set
+    var blockerStatus = "Shooter off"
+        private set
 
     private var lastRequestedPower = 0.0
     private var speedReachedAtNanos = 0L
@@ -88,10 +90,17 @@ class ShooterSubsystem(hardwareMap: HardwareMap) : Subsystem {
         if (!bothFastEnough) {
             speedReachedAtNanos = 0L
             atSpeed = false
+            blockerStatus = when {
+                targetSpeed1 <= 0.0 || targetSpeed2 <= 0.0 -> "Invalid motor speed configuration"
+                measuredSpeed1 < 1.0 -> "No speed from shooter1 encoder"
+                measuredSpeed2 < 1.0 -> "No speed from shooter2 encoder"
+                else -> "Flywheels below target"
+            }
         } else {
             val now = System.nanoTime()
             if (speedReachedAtNanos == 0L) speedReachedAtNanos = now
             atSpeed = now - speedReachedAtNanos >= READY_HOLD_NANOS
+            blockerStatus = if (atSpeed) "Open: at speed" else "Holding speed for 200 ms"
         }
 
         if (atSpeed) openBlocker() else closeBlocker()
@@ -111,6 +120,7 @@ class ShooterSubsystem(hardwareMap: HardwareMap) : Subsystem {
         lastRequestedPower = 0.0
         speedReachedAtNanos = 0L
         atSpeed = false
+        blockerStatus = "Shooter off or reversing"
     }
 
     private fun switchMode(mode: ControlMode) {
@@ -119,6 +129,7 @@ class ShooterSubsystem(hardwareMap: HardwareMap) : Subsystem {
         shooter2.power = 0.0
         closeBlocker()
         atSpeed = false
+        blockerStatus = "Changing shooter mode"
         speedReachedAtNanos = 0L
         lastRequestedPower = 0.0
         val runMode = if (mode == ControlMode.VELOCITY_PID) {
