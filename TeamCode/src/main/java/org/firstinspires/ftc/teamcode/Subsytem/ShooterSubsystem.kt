@@ -9,6 +9,8 @@ import dev.nextftc.core.subsystems.Subsystem
 import kotlin.math.abs
 
 class ShooterSubsystem(hardwareMap: HardwareMap) : Subsystem {
+    enum class ControlMode { MANUAL_POWER, VELOCITY_PID }
+
     private val shooter1 = hardwareMap.get(DcMotorEx::class.java, "shooter1")
     private val shooter2 = hardwareMap.get(DcMotorEx::class.java, "shooter2")
     private val blocker = hardwareMap.get(Servo::class.java, "blocker")
@@ -31,6 +33,8 @@ class ShooterSubsystem(hardwareMap: HardwareMap) : Subsystem {
 
     private var lastRequestedPower = 0.0
     private var speedReachedAtNanos = 0L
+    var controlMode = ControlMode.MANUAL_POWER
+        private set
 
     companion object {
         private const val READY_SPEED_FRACTION = 0.95
@@ -44,30 +48,35 @@ class ShooterSubsystem(hardwareMap: HardwareMap) : Subsystem {
         shooter2.direction = DcMotorSimple.Direction.REVERSE
         shooter1.zeroPowerBehavior = DcMotor.ZeroPowerBehavior.BRAKE
         shooter2.zeroPowerBehavior = DcMotor.ZeroPowerBehavior.BRAKE
-        shooter1.mode = DcMotor.RunMode.RUN_USING_ENCODER
-        shooter2.mode = DcMotor.RunMode.RUN_USING_ENCODER
+        shooter1.mode = DcMotor.RunMode.RUN_WITHOUT_ENCODER
+        shooter2.mode = DcMotor.RunMode.RUN_WITHOUT_ENCODER
         closeBlocker()
     }
 
     /** Runs both flywheels and opens the blocker only after both reach speed. */
-    fun updateShot(power: Double): Boolean {
+    fun updateShot(power: Double, mode: ControlMode): Boolean {
         val requestedPower = power.coerceIn(0.0, 1.0)
         if (requestedPower <= 0.0) {
             setFlywheelPower(0.0)
             return false
         }
 
+        switchMode(mode)
         if (abs(requestedPower - lastRequestedPower) > 1e-6) {
             speedReachedAtNanos = 0L
             atSpeed = false
             closeBlocker()
         }
         lastRequestedPower = requestedPower
-        shooter1.power = requestedPower
-        shooter2.power = requestedPower
-
         targetSpeed1 = requestedPower * maxTicksPerSecond1
         targetSpeed2 = requestedPower * maxTicksPerSecond2
+        if (mode == ControlMode.VELOCITY_PID) {
+            shooter1.velocity = targetSpeed1
+            shooter2.velocity = targetSpeed2
+        } else {
+            shooter1.power = requestedPower
+            shooter2.power = requestedPower
+        }
         measuredSpeed1 = abs(shooter1.velocity)
         measuredSpeed2 = abs(shooter2.velocity)
 
@@ -91,6 +100,7 @@ class ShooterSubsystem(hardwareMap: HardwareMap) : Subsystem {
 
     fun setFlywheelPower(power: Double) {
         val clipped = power.coerceIn(-1.0, 1.0)
+        switchMode(ControlMode.MANUAL_POWER)
         closeBlocker()
         shooter1.power = clipped
         shooter2.power = clipped
@@ -101,6 +111,24 @@ class ShooterSubsystem(hardwareMap: HardwareMap) : Subsystem {
         lastRequestedPower = 0.0
         speedReachedAtNanos = 0L
         atSpeed = false
+    }
+
+    private fun switchMode(mode: ControlMode) {
+        if (mode == controlMode) return
+        shooter1.power = 0.0
+        shooter2.power = 0.0
+        closeBlocker()
+        atSpeed = false
+        speedReachedAtNanos = 0L
+        lastRequestedPower = 0.0
+        val runMode = if (mode == ControlMode.VELOCITY_PID) {
+            DcMotor.RunMode.RUN_USING_ENCODER
+        } else {
+            DcMotor.RunMode.RUN_WITHOUT_ENCODER
+        }
+        shooter1.mode = runMode
+        shooter2.mode = runMode
+        controlMode = mode
     }
 
     private fun openBlocker() { blocker.position = BLOCKER_OPEN }
