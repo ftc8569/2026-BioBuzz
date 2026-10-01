@@ -28,19 +28,17 @@ class ShooterSubsystem(hardwareMap: HardwareMap) : Subsystem {
     val flywheelPower1: Double get() = shooter1.power
     val flywheelPower2: Double get() = shooter2.power
     val blockerCommandedPosition: Double get() = blocker.position
-    var atSpeed = false
+    var blockerOpen = false
         private set
     var blockerStatus = "Shooter off"
         private set
 
-    private var lastRequestedPower = 0.0
-    private var speedReachedAtNanos = 0L
+    private var shotStartedAtNanos = 0L
     var controlMode = ControlMode.MANUAL_POWER
         private set
 
     companion object {
-        private const val READY_SPEED_FRACTION = 0.95
-        private const val READY_HOLD_NANOS = 200_000_000L
+        private const val BLOCKER_OPEN_DELAY_NANOS = 500_000_000L
         private const val BLOCKER_OPEN = 0.45
         private const val BLOCKER_CLOSED = 0.24
     }
@@ -55,7 +53,7 @@ class ShooterSubsystem(hardwareMap: HardwareMap) : Subsystem {
         closeBlocker()
     }
 
-    /** Runs both flywheels and opens the blocker only after both reach speed. */
+    /** Runs both flywheels and opens the blocker half a second after shooting starts. */
     fun updateShot(power: Double, mode: ControlMode): Boolean {
         val requestedPower = power.coerceIn(0.0, 1.0)
         if (requestedPower <= 0.0) {
@@ -64,12 +62,8 @@ class ShooterSubsystem(hardwareMap: HardwareMap) : Subsystem {
         }
 
         switchMode(mode)
-        if (abs(requestedPower - lastRequestedPower) > 1e-6) {
-            speedReachedAtNanos = 0L
-            atSpeed = false
-            closeBlocker()
-        }
-        lastRequestedPower = requestedPower
+        val now = System.nanoTime()
+        if (shotStartedAtNanos == 0L) shotStartedAtNanos = now
         targetSpeed1 = requestedPower * maxTicksPerSecond1
         targetSpeed2 = requestedPower * maxTicksPerSecond2
         if (mode == ControlMode.VELOCITY_PID) {
@@ -81,30 +75,10 @@ class ShooterSubsystem(hardwareMap: HardwareMap) : Subsystem {
         }
         measuredSpeed1 = abs(shooter1.velocity)
         measuredSpeed2 = abs(shooter2.velocity)
-
-        val bothFastEnough = targetSpeed1 > 0.0 && targetSpeed2 > 0.0 &&
-            measuredSpeed1.isFinite() && measuredSpeed2.isFinite() &&
-            measuredSpeed1 >= targetSpeed1 * READY_SPEED_FRACTION &&
-            measuredSpeed2 >= targetSpeed2 * READY_SPEED_FRACTION
-
-        if (!bothFastEnough) {
-            speedReachedAtNanos = 0L
-            atSpeed = false
-            blockerStatus = when {
-                targetSpeed1 <= 0.0 || targetSpeed2 <= 0.0 -> "Invalid motor speed configuration"
-                measuredSpeed1 < 1.0 -> "No speed from shooter1 encoder"
-                measuredSpeed2 < 1.0 -> "No speed from shooter2 encoder"
-                else -> "Flywheels below target"
-            }
-        } else {
-            val now = System.nanoTime()
-            if (speedReachedAtNanos == 0L) speedReachedAtNanos = now
-            atSpeed = now - speedReachedAtNanos >= READY_HOLD_NANOS
-            blockerStatus = if (atSpeed) "Open: at speed" else "Holding speed for 200 ms"
-        }
-
-        if (atSpeed) openBlocker() else closeBlocker()
-        return atSpeed
+        blockerOpen = now - shotStartedAtNanos >= BLOCKER_OPEN_DELAY_NANOS
+        blockerStatus = if (blockerOpen) "Open after 0.5 s" else "Waiting 0.5 s"
+        if (blockerOpen) openBlocker() else closeBlocker()
+        return blockerOpen
     }
 
     fun setFlywheelPower(power: Double) {
@@ -117,9 +91,8 @@ class ShooterSubsystem(hardwareMap: HardwareMap) : Subsystem {
         targetSpeed2 = 0.0
         measuredSpeed1 = abs(shooter1.velocity)
         measuredSpeed2 = abs(shooter2.velocity)
-        lastRequestedPower = 0.0
-        speedReachedAtNanos = 0L
-        atSpeed = false
+        shotStartedAtNanos = 0L
+        blockerOpen = false
         blockerStatus = "Shooter off or reversing"
     }
 
@@ -128,10 +101,9 @@ class ShooterSubsystem(hardwareMap: HardwareMap) : Subsystem {
         shooter1.power = 0.0
         shooter2.power = 0.0
         closeBlocker()
-        atSpeed = false
+        blockerOpen = false
         blockerStatus = "Changing shooter mode"
-        speedReachedAtNanos = 0L
-        lastRequestedPower = 0.0
+        shotStartedAtNanos = 0L
         val runMode = if (mode == ControlMode.VELOCITY_PID) {
             DcMotor.RunMode.RUN_USING_ENCODER
         } else {

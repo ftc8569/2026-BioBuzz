@@ -117,7 +117,7 @@ class BioBuzzTeleOp : NextFTCOpMode() {
         telemetry.addData("D-pad seen (up/down)", "%s / %s", gamepad1.dpad_up || gamepad2.dpad_up, gamepad1.dpad_down || gamepad2.dpad_down)
         telemetry.addData("Shooter requested power", "%.2f", currentShooterPower)
         telemetry.addData("Shooter motor power 1 / 2", "%.2f / %.2f", shooter.flywheelPower1, shooter.flywheelPower2)
-        telemetry.addData("Shooter at speed / blocker open", shooter.atSpeed)
+        telemetry.addData("Blocker open", shooter.blockerOpen)
         telemetry.addData("Blocker status", shooter.blockerStatus)
         telemetry.addData("Blocker commanded position", "%.2f", shooter.blockerCommandedPosition)
         telemetry.addData("Flywheel 1 ticks/s", "%.0f / %.0f", shooter.measuredSpeed1, shooter.targetSpeed1)
