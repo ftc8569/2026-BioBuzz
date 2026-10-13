@@ -14,14 +14,11 @@ class BioBuzzTeleOp : NextFTCOpMode() {
     private lateinit var drive: DriveSubsystem
     private lateinit var intake: IntakeSubsystem
     private lateinit var shooter: ShooterSubsystem
-    private var shooterPresetSteps = 40
-    private val shooterPreset: Double get() = shooterPresetSteps * 0.02
+    private val shooterControls = ShooterControls()
+    private val shooterPreset: Double get() = shooterControls.preset
+    private val shooterMode: ShooterSubsystem.ControlMode get() = shooterControls.mode
     private var currentShooterPower = 0.0
     private var currentIntakePower = 0.0
-    private var previousDpadUp = false
-    private var previousDpadDown = false
-    private var previousModeButton = false
-    private var shooterMode = ShooterSubsystem.ControlMode.MANUAL_POWER
 
     override fun onInit() {
         drive = DriveSubsystem(hardwareMap)
@@ -45,6 +42,7 @@ class BioBuzzTeleOp : NextFTCOpMode() {
             .setIsDone { false }
             .setUpdate { updateMechanisms() }
             .setStop {
+                shooter.setManualBlockerOpen(false)
                 shooter.setFlywheelPower(0.0)
                 intake.setPower(0.0)
             }
@@ -63,24 +61,7 @@ class BioBuzzTeleOp : NextFTCOpMode() {
     private fun updateMechanisms() {
         val dpadUp = gamepad1.dpad_up || gamepad2.dpad_up
         val dpadDown = gamepad1.dpad_down || gamepad2.dpad_down
-        if (dpadUp && !previousDpadUp && !dpadDown) {
-            shooterPresetSteps = (shooterPresetSteps + 1).coerceAtMost(50)
-        }
-        if (dpadDown && !previousDpadDown && !dpadUp) {
-            shooterPresetSteps = (shooterPresetSteps - 1).coerceAtLeast(0)
-        }
-        previousDpadUp = dpadUp
-        previousDpadDown = dpadDown
-
-        val modeButton = gamepad1.y
-        if (modeButton && !previousModeButton) {
-            shooterMode = if (shooterMode == ShooterSubsystem.ControlMode.MANUAL_POWER) {
-                ShooterSubsystem.ControlMode.VELOCITY_PID
-            } else {
-                ShooterSubsystem.ControlMode.MANUAL_POWER
-            }
-        }
-        previousModeButton = modeButton
+        shooterControls.update(gamepad1.y, dpadUp, dpadDown)
 
         currentShooterPower = when {
             gamepad1.left_bumper -> -0.8
@@ -88,11 +69,14 @@ class BioBuzzTeleOp : NextFTCOpMode() {
             else -> 0.0
         }
 
+        shooter.setControlMode(shooterMode)
         if (currentShooterPower > 0.0) {
             shooter.updateShot(currentShooterPower, shooterMode)
         } else {
             shooter.setFlywheelPower(currentShooterPower)
         }
+        val manualBlockerOpen = gamepad1.b || gamepad2.b
+        shooter.setManualBlockerOpen(manualBlockerOpen)
 
         val manualIntakePower = when {
             gamepad1.right_trigger > 0.05 -> gamepad1.right_trigger.toDouble()
@@ -100,12 +84,15 @@ class BioBuzzTeleOp : NextFTCOpMode() {
             else -> 0.0
         }
 
-        currentIntakePower = when {
-            gamepad1.a -> 0.0
-            currentShooterPower != 0.0 -> currentShooterPower
-            manualIntakePower != 0.0 -> manualIntakePower
-            else -> 0.0
-        }
+        currentIntakePower = FeedControls.intakePower(
+            stop = gamepad1.a,
+            manualPower = manualIntakePower,
+            shooterPower = currentShooterPower,
+            preset = shooterPreset,
+            mode = shooterMode,
+            feedReady = shooter.feedReady,
+            manualBlockerOpen = manualBlockerOpen
+        )
 
         intake.setPower(currentIntakePower)
     }
@@ -114,20 +101,39 @@ class BioBuzzTeleOp : NextFTCOpMode() {
         telemetry.addData("Intake Power", currentIntakePower)
         telemetry.addData("Shooter preset (G1/G2 up/down)", "%.2f", shooterPreset)
         telemetry.addData("Shooter mode (G1 Y)", shooterMode)
+        telemetry.addData("Shooter speed state", shooter.speedStatus)
         telemetry.addData("D-pad seen (up/down)", "%s / %s", gamepad1.dpad_up || gamepad2.dpad_up, gamepad1.dpad_down || gamepad2.dpad_down)
-        telemetry.addData("Shooter requested power", "%.2f", currentShooterPower)
+        telemetry.addData("Shooter requested fraction", "%.2f", currentShooterPower)
         telemetry.addData("Shooter motor power 1 / 2", "%.2f / %.2f", shooter.flywheelPower1, shooter.flywheelPower2)
+        telemetry.addData("Manual blocker (G1/G2 B)", gamepad1.b || gamepad2.b)
         telemetry.addData("Blocker open", shooter.blockerOpen)
+        telemetry.addData("Both flywheels at speed", shooter.atSpeed)
+        telemetry.addData("Automatic feed ready", shooter.feedReady)
+        telemetry.addData("Feed readiness", shooter.feedReadiness)
+        telemetry.addData("Encoder feedback unavailable", shooter.encoderFault)
         telemetry.addData("Blocker status", shooter.blockerStatus)
         telemetry.addData("Blocker commanded position", "%.2f", shooter.blockerCommandedPosition)
-        telemetry.addData("Flywheel 1 ticks/s", "%.0f / %.0f", shooter.measuredSpeed1, shooter.targetSpeed1)
-        telemetry.addData("Flywheel 2 ticks/s", "%.0f / %.0f", shooter.measuredSpeed2, shooter.targetSpeed2)
+        telemetry.addData("Full motor speed RPM", "%.0f", ShooterSubsystem.MAX_MOTOR_RPM)
+        telemetry.addData("PID target RPM", "%.0f", shooter.targetRpm)
+        telemetry.addData("Measured motor RPM 1 / 2", "%.0f / %.0f", shooter.measuredRpm1, shooter.measuredRpm2)
+        telemetry.addData("RPM configuration valid", shooter.rpmConfigurationValid)
+        telemetry.addData("Raw ticks/s 1 / 2", "%.0f / %.0f",
+            shooter.measuredTicksPerSecond1, shooter.measuredTicksPerSecond2)
+        telemetry.addData("Encoder position ticks 1 / 2", "%d / %d",
+            shooter.encoderPosition1, shooter.encoderPosition2)
+        telemetry.addData("PID target ticks/s 1 / 2", "%.0f / %.0f",
+            shooter.targetTicksPerSecond1, shooter.targetTicksPerSecond2)
+        telemetry.addData("Motor config ticks/rev 1 / 2", "%.0f / %.0f",
+            shooter.configuredTicksPerRev1, shooter.configuredTicksPerRev2)
+        telemetry.addData("Motor config max ticks/s 1 / 2", "%.0f / %.0f",
+            shooter.configuredMaxTicksPerSecond1, shooter.configuredMaxTicksPerSecond2)
         telemetry.update()
     }
 
     override fun onStop() {
         drive.stop()
         intake.setPower(0.0)
+        shooter.setManualBlockerOpen(false)
         shooter.setFlywheelPower(0.0)
     }
 }

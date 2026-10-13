@@ -1,5 +1,24 @@
+buildscript {
+    repositories {
+        mavenCentral()
+        google()
+        maven { url = 'https://repo.dairy.foundation/releases' }
+    }
+    dependencies {
+        // Load 0.3.2 uses ExecOperations, which is compatible with Gradle 9.
+        classpath 'dev.frozenmilk:Load:0.3.2'
+    }
+}
+
 apply plugin: 'com.android.application'
 apply plugin: 'org.jetbrains.kotlin.android'
+apply plugin: 'dev.frozenmilk.sinister.sloth.load'
+
+load {
+    // Use the existing USB/Wi-Fi ADB connection. The default auto-connect mode
+    // can wait indefinitely when the robot at 192.168.43.1 is unavailable.
+    autoconnect = dev.frozenmilk.sinister.sloth.AutoConnect.valueOf('NEVER')
+}
 
 //
 // build.gradle in TeamCode
@@ -20,17 +39,28 @@ apply from: '../build.dependencies.gradle'
 android {
     namespace = 'org.firstinspires.ftc.teamcode'
 
-    kotlinOptions {
-        jvmTarget = '1.8'
-    }
-
     packagingOptions {
         jniLibs.useLegacyPackaging = true
     }
 }
 
+kotlin {
+    // Keep compilation and host tests on the FTC-supported JDK, even on newer Macs.
+    jvmToolchain(17)
+    compilerOptions {
+        jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_1_8
+    }
+}
+
+repositories {
+    maven { url = 'https://repo.dairy.foundation/releases' }
+}
+
 dependencies {
     implementation project(':FtcRobotController')
     implementation 'dev.nextftc:ftc:1.0.0'
-    implementation 'org.jetbrains.kotlin:kotlin-stdlib:2.2.20'
+    implementation 'org.jetbrains.kotlin:kotlin-stdlib:2.3.21'
+    implementation 'dev.frozenmilk.sinister:Sloth:0.3.2'
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.mockito:mockito-core:5.14.2'
 }
