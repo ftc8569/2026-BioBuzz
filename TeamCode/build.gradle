@@ -1,4 +1,24 @@
+buildscript {
+    repositories {
+        mavenCentral()
+        google()
+        maven { url = 'https://repo.dairy.foundation/releases' }
+    }
+    dependencies {
+        // Load 0.3.2 uses ExecOperations, which is compatible with Gradle 9.
+        classpath 'dev.frozenmilk:Load:0.3.2'
+    }
+}
+
 apply plugin: 'com.android.application'
+apply plugin: 'org.jetbrains.kotlin.android'
+apply plugin: 'dev.frozenmilk.sinister.sloth.load'
+
+load {
+    // Use the existing USB/Wi-Fi ADB connection. The default auto-connect mode
+    // can wait indefinitely when the robot at 192.168.43.1 is unavailable.
+    autoconnect = dev.frozenmilk.sinister.sloth.AutoConnect.valueOf('NEVER')
+}
 
 //
 // build.gradle in TeamCode
@@ -12,42 +32,35 @@ apply plugin: 'com.android.application'
 
 // Custom definitions may go here
 
-// SlothLoad adds deploySloth, which hot-reloads TeamCode classes to the robot
-// without reinstalling the full Robot Controller APK.
-buildscript {
-    repositories {
-        mavenCentral()
-        google()
-        maven { url = "https://repo.dairy.foundation/releases" }
-    }
-    dependencies {
-        classpath "dev.frozenmilk:Load:0.3.2"
-    }
-}
-
 // Include common definitions from above.
 apply from: '../build.common.gradle'
 apply from: '../build.dependencies.gradle'
-apply plugin: 'org.jetbrains.kotlin.android'
-apply plugin: 'dev.frozenmilk.sinister.sloth.load'
 
 android {
     namespace = 'org.firstinspires.ftc.teamcode'
 
     packagingOptions {
-        jniLibs.useLegacyPackaging true
+        jniLibs.useLegacyPackaging = true
     }
-    kotlinOptions {
-        jvmTarget = '1.8'
+}
+
+kotlin {
+    // Keep compilation and host tests on the FTC-supported JDK, even on newer Macs.
+    jvmToolchain(17)
+    compilerOptions {
+        jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_1_8
     }
+}
+
+repositories {
+    maven { url = 'https://repo.dairy.foundation/releases' }
 }
 
 dependencies {
     implementation project(':FtcRobotController')
-    implementation 'androidx.core:core-ktx:1.12.0'
-    // NextFTC dependencies
-    implementation 'dev.nextftc:ftc:1.1.0'
-    implementation 'dev.nextftc:core:1.1.0'
-    // Sloth runtime required by the deploySloth hot-reload task.
+    implementation 'dev.nextftc:ftc:1.0.0'
+    implementation 'org.jetbrains.kotlin:kotlin-stdlib:2.3.21'
     implementation 'dev.frozenmilk.sinister:Sloth:0.3.2'
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.mockito:mockito-core:5.14.2'
 }

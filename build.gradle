@@ -5,23 +5,17 @@
  */
 
 buildscript {
-    ext {
-        kotlin_version = '2.4.20'
-    }
     repositories {
         mavenCentral()
         google()
-    }
-    dependencies {
-        classpath 'org.jetbrains.kotlin:kotlin-gradle-plugin:2.3.10'
     }
 }
 
 plugins {
     // Note for FTC Teams: Do not modify this yourself.
-    id 'com.android.application' version '9.4.1' apply false
-    id 'com.android.library' version '9.4.1' apply false
-    id 'org.jetbrains.kotlin.android' version '2.2.20' apply false
+    id 'com.android.application' version '8.13.2' apply false
+    id 'com.android.library' version '8.13.2' apply false
+    id 'org.jetbrains.kotlin.android' version '2.3.21' apply false
 }
 
 // This is now required because aapt2 has to be downloaded from the
@@ -30,8 +24,6 @@ allprojects {
     repositories {
         mavenCentral()
         google()
-        maven { url = "https://maven.rowanmcalpin.com/" }
-        maven { url = "https://repo.dairy.foundation/releases" }
     }
 }
 

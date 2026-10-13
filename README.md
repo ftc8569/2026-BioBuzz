@@ -2,6 +2,29 @@
 
 This repository contains the public FTC SDK for the BIOBUZZ (2026-2027) competition season.
 
+## Sloth deployment
+
+Connect the robot through USB or connect to its Wi-Fi and run `adb connect 192.168.43.1:5555`.
+Check `adb devices` lists exactly one authorized device. Sloth uses this existing
+connection; automatic connection retries are disabled so an unavailable robot
+does not leave deployment hanging.
+
+After upgrading Sloth or changing dependencies, install the full app once:
+
+```sh
+./gradlew :TeamCode:installDebug
+```
+
+For subsequent TeamCode changes, use:
+
+```sh
+./gradlew deploySloth
+```
+
+The wrapper is named `gradlew`, not `gradew`. Load and Sloth are paired at 0.3.2;
+Load 0.2.4 calls `Project.exec`, which was removed in Gradle 9. See the
+[Sloth installation guide](https://github.com/Dairy-Foundation/Sloth#installation).
+
 ## Welcome!
 This GitHub repository contains the source code that is used to build an Android app to control a *FIRST* Tech Challenge competition robot.  To use this SDK, download/clone the entire project to your local computer.
 
