@@ -104,6 +104,14 @@ class RobotLocationSubsystem(
     }
 
     fun calculateRotationToBlueHive(location: FieldLocation): Double? {
+        return calculateRotationToSavedHive(location)
+    }
+
+    fun calculateRotationToRedHive(location: FieldLocation): Double? {
+        return calculateRotationToSavedHive(location)
+    }
+
+    private fun calculateRotationToSavedHive(location: FieldLocation): Double? {
         val hive = hiveLocation ?: return null
         val deltaX = hive.xInches - location.xInches
         val deltaY = hive.yInches - location.yInches

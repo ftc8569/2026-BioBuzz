@@ -3,9 +3,9 @@ package org.firstinspires.ftc.teamcode.teleop
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp
 import com.qualcomm.robotcore.hardware.DcMotor
 import com.qualcomm.robotcore.hardware.DcMotorSimple
+import dev.nextftc.core.components.SubsystemComponent
 import dev.nextftc.ftc.NextFTCOpMode
 import dev.nextftc.ftc.components.BulkReadComponent
-import dev.nextftc.core.components.SubsystemComponent
 import org.firstinspires.ftc.teamcode.Subsytem.FieldLocation
 import org.firstinspires.ftc.teamcode.Subsytem.IntakeSubsystem
 import org.firstinspires.ftc.teamcode.Subsytem.RobotLocationSubsystem
@@ -13,7 +13,7 @@ import org.firstinspires.ftc.teamcode.Subsytem.ShooterSubsystem
 import org.firstinspires.ftc.teamcode.Subsytem.VisionSubsystem
 
 @TeleOp(name = "BioBuzz NextFTC Kotlin TeleOp")
-class BioBuzzTeleOp : NextFTCOpMode() {
+class BioBuzzTeleOpBlueHive : NextFTCOpMode() {
     // The four mecanum drive motors let the robot drive forward, sideways,
     // backward, and turn.
     private lateinit var driveFL: DcMotor
@@ -70,7 +70,7 @@ class BioBuzzTeleOp : NextFTCOpMode() {
         // Set Pinpoint's zero position during the first update only.
         if (!locationInitialized) {
             robotLocation.setStartingLocation(
-                // !-----Set the Starting Position based on Teleop Position-----!
+                // !-----Set the Starting Position based on Teleop Position (Parked Position)-----!
                 FieldLocation(
                     xInches = 0.0,
                     yInches = 0.0,
@@ -129,11 +129,13 @@ class BioBuzzTeleOp : NextFTCOpMode() {
         if (gamepad1.b) shooter.setBlockerPosition(true)
         if (gamepad1.x) shooter.setBlockerPosition(false)
         val location = robotLocation.getLocation()
+        //Update Blue Hive Location
         if (gamepad1.x && !previousXButtonPressed) {
             robotLocation.updateHiveLocation()
             blueHiveHeading = null
             rotatingToBlueHive = false
         }
+        //Turn to Blue Hive Location
         previousXButtonPressed = gamepad1.x
         if (gamepad1.y && !previousYButtonPressed) {
             blueHiveHeading = robotLocation.calculateRotationToBlueHive(location)

@@ -11,9 +11,11 @@ import org.firstinspires.ftc.teamcode.Subsytem.IntakeSubsystem
 import org.firstinspires.ftc.teamcode.Subsytem.RobotLocationSubsystem
 import org.firstinspires.ftc.teamcode.Subsytem.ShooterSubsystem
 import org.firstinspires.ftc.teamcode.Subsytem.VisionSubsystem
+import kotlin.math.abs
+import kotlin.math.sign
 
 @TeleOp(name = "BioBuzz NextFTC Kotlin TeleOp")
-class BioBuzzTeleOpBlueHive : NextFTCOpMode() {
+class BioBuzzTeleOpRedHive : NextFTCOpMode() {
     // The four mecanum drive motors let the robot drive forward, sideways,
     // backward, and turn.
     private lateinit var driveFL: DcMotor
@@ -32,8 +34,8 @@ class BioBuzzTeleOpBlueHive : NextFTCOpMode() {
     private var locationInitialized = false
     private var previousXButtonPressed = false
     private var previousYButtonPressed = false
-    private var blueHiveHeading: Double? = null
-    private var rotatingToBlueHive = false
+    private var redHiveHeading: Double? = null
+    private var rotatingToRedHive = false
 
     // Used only to show how much each drive encoder changed since the last
     // update. Pinpoint, rather than these drive encoders, provides the location.
@@ -129,17 +131,17 @@ class BioBuzzTeleOpBlueHive : NextFTCOpMode() {
         if (gamepad1.b) shooter.setBlockerPosition(true)
         if (gamepad1.x) shooter.setBlockerPosition(false)
         val location = robotLocation.getLocation()
-        //Update Blue Hive Location
+        //Update Red Hive Location
         if (gamepad1.x && !previousXButtonPressed) {
             robotLocation.updateHiveLocation()
-            blueHiveHeading = null
-            rotatingToBlueHive = false
+            redHiveHeading = null
+            rotatingToRedHive = false
         }
-        //Turn to Blue Hive Location
+        //Turn to Red Hive Location
         previousXButtonPressed = gamepad1.x
         if (gamepad1.y && !previousYButtonPressed) {
-            blueHiveHeading = robotLocation.calculateRotationToBlueHive(location)
-            rotatingToBlueHive = blueHiveHeading != null
+            redHiveHeading = robotLocation.calculateRotationToRedHive(location)
+            rotatingToRedHive = redHiveHeading != null
         }
         previousYButtonPressed = gamepad1.y
 
@@ -148,21 +150,21 @@ class BioBuzzTeleOpBlueHive : NextFTCOpMode() {
         val manualTurn = gamepad1.right_stick_x.toDouble()
         var turn = manualTurn
         var headingError: Double? = null
-        if (kotlin.math.abs(manualTurn) > 0.05) {
-            rotatingToBlueHive = false
-        } else if (rotatingToBlueHive) {
-            val targetHeading = blueHiveHeading
+        if (abs(manualTurn) > 0.05) {
+            rotatingToRedHive = false
+        } else if (rotatingToRedHive) {
+            val targetHeading = redHiveHeading
             if (targetHeading == null) {
-                rotatingToBlueHive = false
+                rotatingToRedHive = false
             } else {
                 headingError = wrapAngle(targetHeading - location.headingRadians)
-                if (kotlin.math.abs(headingError) <= HEADING_TOLERANCE_RADIANS) {
-                    rotatingToBlueHive = false
+                if (abs(headingError) <= HEADING_TOLERANCE_RADIANS) {
+                    rotatingToRedHive = false
                 } else {
                     val correction = (-TURN_GAIN * headingError)
                         .coerceIn(-MAX_AUTO_TURN, MAX_AUTO_TURN)
-                    turn = if (kotlin.math.abs(correction) < MIN_AUTO_TURN) {
-                        kotlin.math.sign(correction) * MIN_AUTO_TURN
+                    turn = if (abs(correction) < MIN_AUTO_TURN) {
+                        sign(correction) * MIN_AUTO_TURN
                     } else {
                         correction
                     }
@@ -173,7 +175,7 @@ class BioBuzzTeleOpBlueHive : NextFTCOpMode() {
         // Mecanum math combines the requested movements. The denominator keeps
         // every motor power between -1.0 and 1.0.
         val denominator = maxOf(
-            kotlin.math.abs(drive) + kotlin.math.abs(strafe) + kotlin.math.abs(turn),
+            abs(drive) + abs(strafe) + abs(turn),
             1.0
         )
         driveFL.power = (drive + strafe + turn) / denominator
@@ -189,12 +191,12 @@ class BioBuzzTeleOpBlueHive : NextFTCOpMode() {
         telemetry.addData("Robot Y (in)", location.yInches)
         telemetry.addData("Robot Heading (rad)", location.headingRadians)
         telemetry.addData(
-            "Blue Hive Heading (rad)",
-            blueHiveHeading ?: "Press X to save hive, then Y to calculate"
+            "Red Hive Heading (rad)",
+            redHiveHeading ?: "Press X to save hive, then Y to calculate"
         )
         telemetry.addData(
-            "Turning to Blue Hive",
-            if (rotatingToBlueHive) "Yes (right stick cancels)" else "No"
+            "Turning to Red Hive",
+            if (rotatingToRedHive) "Yes (right stick cancels)" else "No"
         )
         headingError?.let { telemetry.addData("Heading Error (rad)", it) }
         //telemetry.addData("Visible AprilTags", vision.getVisibleTagIds())
