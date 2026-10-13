@@ -31,8 +31,8 @@ class ShooterMotorDiagnosticTeleOp : OpMode() {
         shooter2 = hardwareMap.get(DcMotorEx::class.java, "shooter2")
         blocker = hardwareMap.get(Servo::class.java, "blocker")
         // Reverse both motor polarities while preserving logical forward/reverse controls.
-        shooter1.direction = DcMotorSimple.Direction.REVERSE
-        shooter2.direction = DcMotorSimple.Direction.FORWARD
+        shooter1.direction = DcMotorSimple.Direction.FORWARD
+        shooter2.direction = DcMotorSimple.Direction.REVERSE
         shooter1.zeroPowerBehavior = DcMotor.ZeroPowerBehavior.FLOAT
         shooter2.zeroPowerBehavior = DcMotor.ZeroPowerBehavior.FLOAT
         shooter1.mode = DcMotor.RunMode.RUN_WITHOUT_ENCODER

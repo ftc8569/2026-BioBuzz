@@ -86,8 +86,8 @@ class ShooterSubsystem(
 
     init {
         // Reverse both motor polarities while preserving logical forward/reverse controls.
-        shooter1.direction = DcMotorSimple.Direction.REVERSE
-        shooter2.direction = DcMotorSimple.Direction.FORWARD
+        shooter1.direction = DcMotorSimple.Direction.FORWARD
+        shooter2.direction = DcMotorSimple.Direction.REVERSE
         shooter1.zeroPowerBehavior = DcMotor.ZeroPowerBehavior.FLOAT
         shooter2.zeroPowerBehavior = DcMotor.ZeroPowerBehavior.FLOAT
         // Software PIDF reads encoders but commands power; avoid a second hub velocity loop.

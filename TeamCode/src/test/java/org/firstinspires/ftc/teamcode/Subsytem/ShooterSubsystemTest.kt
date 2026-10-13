@@ -60,8 +60,8 @@ class ShooterSubsystemTest {
 
     @Test fun `PID starts enabled and 66 percent sets 2970 RPM immediately`() {
         val rig = Rig()
-        verify(rig.motor1).setDirection(DcMotorSimple.Direction.REVERSE)
-        verify(rig.motor2).setDirection(DcMotorSimple.Direction.FORWARD)
+        verify(rig.motor1).setDirection(DcMotorSimple.Direction.FORWARD)
+        verify(rig.motor2).setDirection(DcMotorSimple.Direction.REVERSE)
         assertEquals(ControlMode.VELOCITY_PID, rig.shooter.controlMode)
         verify(rig.motor1).setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER)
         verify(rig.motor2).setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER)

@@ -29,10 +29,11 @@ cannot verify actual speed.
 
 ## Motor polarity
 
-Both intake and shooter pairs now use motor 1 `REVERSE` and motor 2 `FORWARD`
-(previously motor 1 `FORWARD` and motor 2 `REVERSE`). This swaps the physical
-intake/outtake and shooting/reversing directions: every positive command now
-applies the opposite electrical polarity, and every negative command does too.
+The shooter pair now uses motor 1 `FORWARD` and motor 2 `REVERSE`
+(previously motor 1 `REVERSE` and motor 2 `FORWARD`). This swaps the physical
+shooting/reversing directions: every positive shooter command now applies the
+opposite electrical polarity, and every negative shooter command does too.
+The intake pair remains motor 1 `REVERSE` and motor 2 `FORWARD`.
 The motor names, buttons, power magnitudes, RPM targets, and feed gates stay the
 same. Shooter Motor Diagnostic uses the same updated directions.
 
