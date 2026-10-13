@@ -21,6 +21,8 @@ public abstract class BioBuzzMainAuto extends OpMode {
     // ---- tune these ----
     /** The simulator's step time limits are for its robot; allow this much longer on the real one. */
     private static final double TIMEOUT_SCALE = 1.5;
+    /** A shot gets flywheel spin-up plus up to 5 s of feeding (3 balls take 4-5 s), whatever the sim's limit was. */
+    private static final double SHOOT_TIMEOUT_SEC = 7.0;
     /** With no camera hook, wait at most this long for the raised CELL's tags instead of the sim's 8-14 s. */
     private static final double VISION_FALLBACK_SEC = 2.5;
     private static final double AUTO_SEC = 30.0;
@@ -129,7 +131,7 @@ public abstract class BioBuzzMainAuto extends OpMode {
             case PUSH:
                 return !followerBusy() || (s.intake && mech.hopperFull()) || t > s.timeoutSec * TIMEOUT_SCALE;
             case SHOOT:
-                return mech.shootingDone() || t > s.timeoutSec * TIMEOUT_SCALE;
+                return mech.shootingDone() || t > SHOOT_TIMEOUT_SEC;
             case WAIT:
                 return t >= s.timeoutSec;
             case WAIT_TIP:

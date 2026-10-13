@@ -12,18 +12,20 @@ import org.firstinspires.ftc.teamcode.Subsytem.ShooterSubsystem;
  * How it works, copied from BioBuzzTeleOp / FeedControls:
  *  - Shooting: the flywheels run at SHOOTER_FRACTION in VELOCITY_PID mode; when ShooterSubsystem.feedReady is true the
  *    blocker is open and the intake motors feed balls at the shooter fraction. There is no ball sensor, so a shot
- *    of N balls feeds for N * FEED_SEC_PER_BALL seconds (counted from when feeding starts).
+ *    of N balls (at most MAX_BALLS) feeds for N * FEED_SEC_PER_BALL seconds (counted from when feeding starts).
  *  - Collecting: flywheels off, intake on. (The blocker opens by itself when the flywheels are at speed, so the
  *    flywheels are stopped while the intake collects.)
  *  - Otherwise: flywheels pre-spin so a shot is ready on arrival; the intake stays off.
- * Not tested on a robot. TODO tune the three numbers below.
+ * Not tested on a robot. TODO tune the numbers below.
  */
 public class RobotMechanisms implements Mechanisms {
-    /** Flywheel speed as a fraction of full motor speed. 0.66 is the TeleOp's starting preset (33 steps x 0.02). */
-    private static final double SHOOTER_FRACTION = 0.66;
+    /** Flywheel speed as a fraction of full motor speed (0.78 measured for the auto shot). */
+    private static final double SHOOTER_FRACTION = 0.78;
     private static final double INTAKE_POWER = 1.0;
-    /** How long the feed runs per ball. A guess; time one real ball. The sim's launcher takes 0.3 s per ball. */
-    private static final double FEED_SEC_PER_BALL = 0.5;
+    /** The robot holds at most 3 balls. */
+    public static final int MAX_BALLS = 3;
+    /** Emptying 3 balls takes 4-5 s (measured), so about 1.5 s per ball; 4.5 s for a full load. */
+    private static final double FEED_SEC_PER_BALL = 1.5;
 
     private final IntakeSubsystem intake;
     private final ShooterSubsystem shooter;
@@ -47,7 +49,7 @@ public class RobotMechanisms implements Mechanisms {
     public void startShooting(int balls) {
         feeding = true;
         feedStarted = false;
-        feedSeconds = balls * FEED_SEC_PER_BALL;
+        feedSeconds = Math.min(balls, MAX_BALLS) * FEED_SEC_PER_BALL;
     }
 
     @Override public void stopShooting() { feeding = false; feedStarted = false; }
