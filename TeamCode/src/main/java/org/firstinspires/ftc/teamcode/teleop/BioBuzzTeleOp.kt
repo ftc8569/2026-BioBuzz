@@ -1,19 +1,32 @@
 package org.firstinspires.ftc.teamcode.teleop
 
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp
+import com.qualcomm.robotcore.hardware.DcMotor
 import dev.nextftc.core.commands.utility.LambdaCommand
 import dev.nextftc.core.components.SubsystemComponent
 import dev.nextftc.ftc.NextFTCOpMode
 import dev.nextftc.ftc.components.BulkReadComponent
 import org.firstinspires.ftc.teamcode.Subsytem.DriveSubsystem
 import org.firstinspires.ftc.teamcode.Subsytem.IntakeSubsystem
+import org.firstinspires.ftc.teamcode.Subsytem.FieldLocation
+import org.firstinspires.ftc.teamcode.Subsytem.RobotLocationSubsystem
 import org.firstinspires.ftc.teamcode.Subsytem.ShooterSubsystem
+import org.firstinspires.ftc.teamcode.Subsytem.VisionSubsystem
 
 @TeleOp(name = "BioBuzz NextFTC Kotlin TeleOp")
 class BioBuzzTeleOp : NextFTCOpMode() {
     private lateinit var drive: DriveSubsystem
     private lateinit var intake: IntakeSubsystem
     private lateinit var shooter: ShooterSubsystem
+    private lateinit var robotLocation: RobotLocationSubsystem
+    private lateinit var vision: VisionSubsystem
+    private lateinit var driveMotors: List<DcMotor>
+    private var previousDriveEncoderPositions: IntArray? = null
+    private var locationInitialized = false
+    private var previousXButtonPressed = false
+    private var previousAimButtonPressed = false
+    private var blueHiveHeading: Double? = null
+    private var rotatingToBlueHive = false
     private val shooterControls = ShooterControls()
     private val shooterPreset: Double get() = shooterControls.preset
     private val shooterMode: ShooterSubsystem.ControlMode get() = shooterControls.mode
@@ -21,12 +34,17 @@ class BioBuzzTeleOp : NextFTCOpMode() {
     private var currentIntakePower = 0.0
 
     override fun onInit() {
+        telemetry.setMsTransmissionInterval(50)
         drive = DriveSubsystem(hardwareMap)
+        driveMotors = listOf("driveFL", "driveFR", "driveBL", "driveBR")
+            .map { hardwareMap.get(DcMotor::class.java, it) }
         intake = IntakeSubsystem(hardwareMap)
         shooter = ShooterSubsystem(hardwareMap)
+        robotLocation = RobotLocationSubsystem(hardwareMap)
+        vision = VisionSubsystem(hardwareMap)
         addComponents(
             BulkReadComponent,
-            SubsystemComponent(drive, intake, shooter)
+            SubsystemComponent(drive, intake, shooter, robotLocation, vision)
         )
     }
 
@@ -51,11 +69,77 @@ class BioBuzzTeleOp : NextFTCOpMode() {
     }
 
     private fun updateDrive() {
+        if (!locationInitialized) {
+            robotLocation.setStartingLocation(FieldLocation(0.0, 0.0, 0.0))
+            locationInitialized = true
+        }
+        val positions = driveMotors.map { it.currentPosition }.toIntArray()
+        val previousPositions = previousDriveEncoderPositions ?: positions
+        telemetry.addData("Drive encoder delta (ticks)", "FL %d, FR %d, BL %d, BR %d",
+            positions[0] - previousPositions[0], positions[1] - previousPositions[1],
+            positions[2] - previousPositions[2], positions[3] - previousPositions[3])
+        previousDriveEncoderPositions = positions
+        val location = robotLocation.getLocation()
+        if (gamepad1.x && !previousXButtonPressed) {
+            robotLocation.updateHiveLocation()
+            blueHiveHeading = null
+            rotatingToBlueHive = false
+        }
+        previousXButtonPressed = gamepad1.x
+        // Gamepad 1 Y retains the branch's shooter-mode toggle.
+        if (gamepad2.y && !previousAimButtonPressed) {
+            blueHiveHeading = robotLocation.calculateRotationToBlueHive(location)
+            rotatingToBlueHive = blueHiveHeading != null
+        }
+        previousAimButtonPressed = gamepad2.y
+        val manualTurn = gamepad1.right_stick_x.toDouble()
+        var turn = manualTurn
+        var headingError: Double? = null
+        if (kotlin.math.abs(manualTurn) > 0.05) {
+            rotatingToBlueHive = false
+        } else if (rotatingToBlueHive) {
+            val targetHeading = blueHiveHeading
+            if (targetHeading == null) {
+                rotatingToBlueHive = false
+            } else {
+                headingError = wrapAngle(targetHeading - location.headingRadians)
+                if (kotlin.math.abs(headingError) <= HEADING_TOLERANCE_RADIANS) {
+                    rotatingToBlueHive = false
+                } else {
+                    val correction = (-TURN_GAIN * headingError)
+                        .coerceIn(-MAX_AUTO_TURN, MAX_AUTO_TURN)
+                    turn = if (kotlin.math.abs(correction) < MIN_AUTO_TURN)
+                        kotlin.math.sign(correction) * MIN_AUTO_TURN else correction
+                }
+            }
+        }
         drive.drive(
             -gamepad1.left_stick_y.toDouble(),
             gamepad1.left_stick_x.toDouble(),
-            gamepad1.right_stick_x.toDouble()
+            turn
         )
+        telemetry.addData("Robot X (in)", location.xInches)
+        telemetry.addData("Robot Y (in)", location.yInches)
+        telemetry.addData("Robot Heading (rad)", location.headingRadians)
+        telemetry.addData("Blue Hive Heading (rad)",
+            blueHiveHeading ?: "Press G1 X to save hive, then G2 Y to aim")
+        telemetry.addData("Turning to Blue Hive",
+            if (rotatingToBlueHive) "Yes (right stick cancels)" else "No")
+        headingError?.let { telemetry.addData("Heading Error (rad)", it) }
+    }
+
+    private fun wrapAngle(angle: Double): Double {
+        var wrapped = angle
+        while (wrapped > Math.PI) wrapped -= 2.0 * Math.PI
+        while (wrapped < -Math.PI) wrapped += 2.0 * Math.PI
+        return wrapped
+    }
+
+    private companion object {
+        const val HEADING_TOLERANCE_RADIANS = 0.035
+        const val TURN_GAIN = 0.8
+        const val MIN_AUTO_TURN = 0.12
+        const val MAX_AUTO_TURN = 0.35
     }
 
     private fun updateMechanisms() {
@@ -99,6 +183,8 @@ class BioBuzzTeleOp : NextFTCOpMode() {
 
     override fun onUpdate() {
         telemetry.addData("Intake Power", currentIntakePower)
+        telemetry.addData("Shooter flywheel 1 RPM", "%.0f", shooter.measuredRpm1)
+        telemetry.addData("Shooter flywheel 2 RPM", "%.0f", shooter.measuredRpm2)
         telemetry.addData("Shooter preset (G1/G2 up/down)", "%.2f", shooterPreset)
         telemetry.addData("Shooter mode (G1 Y)", shooterMode)
         telemetry.addData("Shooter speed state", shooter.speedStatus)
@@ -115,7 +201,6 @@ class BioBuzzTeleOp : NextFTCOpMode() {
         telemetry.addData("Blocker commanded position", "%.2f", shooter.blockerCommandedPosition)
         telemetry.addData("Full motor speed RPM", "%.0f", ShooterSubsystem.MAX_MOTOR_RPM)
         telemetry.addData("PID target RPM", "%.0f", shooter.targetRpm)
-        telemetry.addData("Measured motor RPM 1 / 2", "%.0f / %.0f", shooter.measuredRpm1, shooter.measuredRpm2)
         telemetry.addData("RPM configuration valid", shooter.rpmConfigurationValid)
         telemetry.addData("Raw ticks/s 1 / 2", "%.0f / %.0f",
             shooter.measuredTicksPerSecond1, shooter.measuredTicksPerSecond2)
@@ -131,6 +216,7 @@ class BioBuzzTeleOp : NextFTCOpMode() {
     }
 
     override fun onStop() {
+        vision.stop()
         drive.stop()
         intake.setPower(0.0)
         shooter.setManualBlockerOpen(false)

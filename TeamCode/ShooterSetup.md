@@ -29,6 +29,9 @@ cannot verify actual speed.
 
 ## Motor polarity
 
+Gamepad 1 Y toggles shooter mode. Hive aiming uses gamepad 1 X to save the hive
+location and gamepad 2 Y to aim; manual right-stick turning cancels aiming.
+
 The shooter pair now uses motor 1 `FORWARD` and motor 2 `REVERSE`
 (previously motor 1 `REVERSE` and motor 2 `FORWARD`). This swaps the physical
 shooting/reversing directions: every positive shooter command now applies the
