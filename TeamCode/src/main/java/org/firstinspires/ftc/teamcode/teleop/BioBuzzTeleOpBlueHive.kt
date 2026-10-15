@@ -2,10 +2,11 @@ package org.firstinspires.ftc.teamcode.teleop
 
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp
 import com.qualcomm.robotcore.hardware.DcMotor
-import com.qualcomm.robotcore.hardware.DcMotorSimple
+import dev.nextftc.core.commands.utility.LambdaCommand
 import dev.nextftc.core.components.SubsystemComponent
 import dev.nextftc.ftc.NextFTCOpMode
 import dev.nextftc.ftc.components.BulkReadComponent
+import org.firstinspires.ftc.teamcode.Subsytem.DriveSubsystem
 import org.firstinspires.ftc.teamcode.Subsytem.FieldLocation
 import org.firstinspires.ftc.teamcode.Subsytem.IntakeSubsystem
 import org.firstinspires.ftc.teamcode.Subsytem.RobotLocationSubsystem
@@ -14,137 +15,87 @@ import org.firstinspires.ftc.teamcode.Subsytem.VisionSubsystem
 
 @TeleOp(name = "BioBuzz NextFTC Kotlin TeleOp")
 class BioBuzzTeleOpBlueHive : NextFTCOpMode() {
-    // The four mecanum drive motors let the robot drive forward, sideways,
-    // backward, and turn.
-    private lateinit var driveFL: DcMotor
-    private lateinit var driveFR: DcMotor
-    private lateinit var driveBL: DcMotor
-    private lateinit var driveBR: DcMotor
-
-    // Each subsystem owns one job so this main file can coordinate the robot
-    // without needing to know every motor and sensor detail.
+    private lateinit var drive: DriveSubsystem
     private lateinit var intake: IntakeSubsystem
     private lateinit var shooter: ShooterSubsystem
     private lateinit var robotLocation: RobotLocationSubsystem
     private lateinit var vision: VisionSubsystem
-
-    // The starting position should be set only once, not every update cycle.
+    private lateinit var driveMotors: List<DcMotor>
+    private var previousDriveEncoderPositions: IntArray? = null
     private var locationInitialized = false
     private var previousXButtonPressed = false
-    private var previousYButtonPressed = false
+    private var previousAimButtonPressed = false
     private var blueHiveHeading: Double? = null
     private var rotatingToBlueHive = false
-
-    // Used only to show how much each drive encoder changed since the last
-    // update. Pinpoint, rather than these drive encoders, provides the location.
-    private var previousDriveEncoderPositions: IntArray? = null
+    private val shooterControls = ShooterControls()
+    private val shooterPreset: Double get() = shooterControls.preset
+    private val shooterMode: ShooterSubsystem.ControlMode get() = shooterControls.mode
+    private var currentShooterPower = 0.0
+    private var currentIntakePower = 0.0
 
     override fun onInit() {
-        // Send telemetry to the Driver Station about every 50 milliseconds.
         telemetry.setMsTransmissionInterval(50)
-
-        // HardwareMap is the robot's address book. These names must exactly
-        // match the names in the Robot Controller hardware configuration.
-        driveFL = hardwareMap.get(DcMotor::class.java, "driveFL")
-        driveFR = hardwareMap.get(DcMotor::class.java, "driveFR")
-        driveBL = hardwareMap.get(DcMotor::class.java, "driveBL")
-        driveBR = hardwareMap.get(DcMotor::class.java, "driveBR")
-
-        // The left motors are mounted opposite the right motors, so reverse
-        // them to make all four wheels drive forward together.
-        driveFL.direction = DcMotorSimple.Direction.REVERSE
-        driveBL.direction = DcMotorSimple.Direction.REVERSE
-
-        // Build the robot's helper objects and register them with NextFTC.
+        drive = DriveSubsystem(hardwareMap)
+        driveMotors = listOf("driveFL", "driveFR", "driveBL", "driveBR")
+            .map { hardwareMap.get(DcMotor::class.java, it) }
         intake = IntakeSubsystem(hardwareMap)
         shooter = ShooterSubsystem(hardwareMap)
         robotLocation = RobotLocationSubsystem(hardwareMap)
         vision = VisionSubsystem(hardwareMap)
         addComponents(
-            SubsystemComponent(intake, shooter, robotLocation, vision),
-            BulkReadComponent
+            BulkReadComponent,
+            SubsystemComponent(drive, intake, shooter, robotLocation, vision)
         )
     }
 
-    override fun onUpdate() {
-        // Set Pinpoint's zero position during the first update only.
+    override fun onStartButtonPressed() {
+        LambdaCommand("Driver control")
+            .setIsDone { false }
+            .setUpdate { updateDrive() }
+            .setStop { drive.stop() }
+            .requires(drive)
+            .schedule()
+
+        LambdaCommand("Shooter and intake control")
+            .setIsDone { false }
+            .setUpdate { updateMechanisms() }
+            .setStop {
+                shooter.setManualBlockerOpen(false)
+                shooter.setFlywheelPower(0.0)
+                intake.setPower(0.0)
+            }
+            .requires(shooter, intake)
+            .schedule()
+    }
+
+    private fun updateDrive() {
         if (!locationInitialized) {
-            robotLocation.setStartingLocation(
-                // !-----Set the Starting Position based on Teleop Position (Parked Position)-----!
-                FieldLocation(
-                    xInches = 0.0,
-                    yInches = 0.0,
-                    headingRadians = 0.0
-                )
-            )
+            robotLocation.setStartingLocation(FieldLocation(0.0, 0.0, 0.0))
             locationInitialized = true
         }
-
-        // The left stick controls forward/backward and sideways movement.
-        // The right stick controls rotation.
-        val drive = -gamepad1.left_stick_y.toDouble()
-        val strafe = gamepad1.left_stick_x.toDouble()
-
-        // Encoders count how far motor shafts have rotated. These readings are
-        // displayed for debugging and are not used as the main field location.
-        val driveEncoderPositions = intArrayOf(
-            driveFL.currentPosition,
-            driveFR.currentPosition,
-            driveBL.currentPosition,
-            driveBR.currentPosition
-        )
-        val previousPositions = previousDriveEncoderPositions ?: driveEncoderPositions
+        val positions = driveMotors.map { it.currentPosition }.toIntArray()
+        val previousPositions = previousDriveEncoderPositions ?: positions
         telemetry.addData(
             "Drive encoder delta (ticks)",
             "FL %d, FR %d, BL %d, BR %d",
-            driveEncoderPositions[0] - previousPositions[0],
-            driveEncoderPositions[1] - previousPositions[1],
-            driveEncoderPositions[2] - previousPositions[2],
-            driveEncoderPositions[3] - previousPositions[3]
+            positions[0] - previousPositions[0],
+            positions[1] - previousPositions[1],
+            positions[2] - previousPositions[2],
+            positions[3] - previousPositions[3]
         )
-
-        // Save this cycle's values so the next cycle can calculate the change.
-        previousDriveEncoderPositions = driveEncoderPositions
-
-        // Right trigger runs the intake forward, left trigger reverses it,
-        // and A stops it.
-        val intakePower = when {
-            gamepad1.a -> 0.0
-            gamepad1.right_trigger > 0.05 -> gamepad1.right_trigger.toDouble()
-            gamepad1.left_trigger > 0.05 -> -gamepad1.left_trigger.toDouble()
-            else -> 0.0
-        }
-        intake.setPower(intakePower)
-
-        // Right bumper runs the shooter forward, left bumper reverses it,
-        // and releasing both bumpers stops it.
-        val shooterPower = when {
-            gamepad1.right_bumper -> 1.0
-            gamepad1.left_bumper -> -1.0
-            else -> 0.0
-        }
-        shooter.setFlywheelPower(shooterPower)
-
-        // B opens the blocker and X closes it.
-        if (gamepad1.b) shooter.setBlockerPosition(true)
-        if (gamepad1.x) shooter.setBlockerPosition(false)
+        previousDriveEncoderPositions = positions
         val location = robotLocation.getLocation()
-        //Update Blue Hive Location
         if (gamepad1.x && !previousXButtonPressed) {
             robotLocation.updateHiveLocation()
             blueHiveHeading = null
             rotatingToBlueHive = false
         }
-        //Turn to Blue Hive Location
         previousXButtonPressed = gamepad1.x
-        if (gamepad1.y && !previousYButtonPressed) {
+        if (gamepad2.y && !previousAimButtonPressed) {
             blueHiveHeading = robotLocation.calculateRotationToBlueHive(location)
             rotatingToBlueHive = blueHiveHeading != null
         }
-        previousYButtonPressed = gamepad1.y
-
-        // A manual turn input cancels automatic aiming. Otherwise, use heading
-        // feedback to turn toward the saved hive bearing and stop at the target.
+        previousAimButtonPressed = gamepad2.y
         val manualTurn = gamepad1.right_stick_x.toDouble()
         var turn = manualTurn
         var headingError: Double? = null
@@ -161,45 +112,28 @@ class BioBuzzTeleOpBlueHive : NextFTCOpMode() {
                 } else {
                     val correction = (-TURN_GAIN * headingError)
                         .coerceIn(-MAX_AUTO_TURN, MAX_AUTO_TURN)
-                    turn = if (kotlin.math.abs(correction) < MIN_AUTO_TURN) {
-                        kotlin.math.sign(correction) * MIN_AUTO_TURN
-                    } else {
-                        correction
-                    }
+                    turn = if (kotlin.math.abs(correction) < MIN_AUTO_TURN)
+                        kotlin.math.sign(correction) * MIN_AUTO_TURN else correction
                 }
             }
         }
-
-        // Mecanum math combines the requested movements. The denominator keeps
-        // every motor power between -1.0 and 1.0.
-        val denominator = maxOf(
-            kotlin.math.abs(drive) + kotlin.math.abs(strafe) + kotlin.math.abs(turn),
-            1.0
+        drive.drive(
+            -gamepad1.left_stick_y.toDouble(),
+            gamepad1.left_stick_x.toDouble(),
+            turn
         )
-        driveFL.power = (drive + strafe + turn) / denominator
-        driveFR.power = (drive - strafe - turn) / denominator
-        driveBL.power = (drive - strafe + turn) / denominator
-        driveBR.power = (drive + strafe - turn) / denominator
-
-        // Telemetry is the robot's report card for the driver. It shows useful
-        // numbers without changing how the robot moves.
-        telemetry.addData("Intake Power", intakePower)
-        telemetry.addData("Shooter Power", shooterPower)
         telemetry.addData("Robot X (in)", location.xInches)
         telemetry.addData("Robot Y (in)", location.yInches)
         telemetry.addData("Robot Heading (rad)", location.headingRadians)
         telemetry.addData(
             "Blue Hive Heading (rad)",
-            blueHiveHeading ?: "Press X to save hive, then Y to calculate"
+            blueHiveHeading ?: "Press G1 X to save hive, then G2 Y to aim"
         )
         telemetry.addData(
             "Turning to Blue Hive",
             if (rotatingToBlueHive) "Yes (right stick cancels)" else "No"
         )
         headingError?.let { telemetry.addData("Heading Error (rad)", it) }
-        //telemetry.addData("Visible AprilTags", vision.getVisibleTagIds())
-        //telemetry.addData("Robot Pose", vision.getRobotPose() ?: "No valid pose")
-        telemetry.update()
     }
 
     private fun wrapAngle(angle: Double): Double {
@@ -214,5 +148,116 @@ class BioBuzzTeleOpBlueHive : NextFTCOpMode() {
         const val TURN_GAIN = 0.8
         const val MIN_AUTO_TURN = 0.12
         const val MAX_AUTO_TURN = 0.35
+    }
+
+    private fun updateMechanisms() {
+        val dpadUp = gamepad1.dpad_up || gamepad2.dpad_up
+        val dpadDown = gamepad1.dpad_down || gamepad2.dpad_down
+        shooterControls.update(gamepad1.y, dpadUp, dpadDown)
+
+        currentShooterPower = when {
+            gamepad1.left_bumper -> -0.8
+            gamepad1.right_bumper -> shooterPreset
+            else -> 0.0
+        }
+
+        shooter.setControlMode(shooterMode)
+        if (currentShooterPower > 0.0) {
+            shooter.updateShot(currentShooterPower, shooterMode)
+        } else {
+            shooter.setFlywheelPower(currentShooterPower)
+        }
+        val manualBlockerOpen = gamepad1.b || gamepad2.b
+        shooter.setManualBlockerOpen(manualBlockerOpen)
+
+        val manualIntakePower = when {
+            gamepad1.right_trigger > 0.05 -> gamepad1.right_trigger.toDouble()
+            gamepad1.left_trigger > 0.05 -> -gamepad1.left_trigger.toDouble()
+            else -> 0.0
+        }
+
+        currentIntakePower = FeedControls.intakePower(
+            stop = gamepad1.a,
+            manualPower = manualIntakePower,
+            shooterPower = currentShooterPower,
+            preset = shooterPreset,
+            mode = shooterMode,
+            feedReady = shooter.feedReady,
+            manualBlockerOpen = manualBlockerOpen
+        )
+
+        intake.setPower(currentIntakePower)
+    }
+
+    override fun onUpdate() {
+        telemetry.addData("Intake Power", currentIntakePower)
+        telemetry.addData("Shooter flywheel 1 RPM", "%.0f", shooter.measuredRpm1)
+        telemetry.addData("Shooter flywheel 2 RPM", "%.0f", shooter.measuredRpm2)
+        telemetry.addData("Shooter preset (G1/G2 up/down)", "%.2f", shooterPreset)
+        telemetry.addData("Shooter mode (G1 Y)", shooterMode)
+        telemetry.addData("Shooter speed state", shooter.speedStatus)
+        telemetry.addData(
+            "D-pad seen (up/down)",
+            "%s / %s",
+            gamepad1.dpad_up || gamepad2.dpad_up,
+            gamepad1.dpad_down || gamepad2.dpad_down
+        )
+        telemetry.addData("Shooter requested fraction", "%.2f", currentShooterPower)
+        telemetry.addData(
+            "Shooter motor power 1 / 2",
+            "%.2f / %.2f",
+            shooter.flywheelPower1,
+            shooter.flywheelPower2
+        )
+        telemetry.addData("Manual blocker (G1/G2 B)", gamepad1.b || gamepad2.b)
+        telemetry.addData("Blocker open", shooter.blockerOpen)
+        telemetry.addData("Both flywheels at speed", shooter.atSpeed)
+        telemetry.addData("Automatic feed ready", shooter.feedReady)
+        telemetry.addData("Feed readiness", shooter.feedReadiness)
+        telemetry.addData("Encoder feedback unavailable", shooter.encoderFault)
+        telemetry.addData("Blocker status", shooter.blockerStatus)
+        telemetry.addData("Blocker commanded position", "%.2f", shooter.blockerCommandedPosition)
+        telemetry.addData("Full motor speed RPM", "%.0f", ShooterSubsystem.MAX_MOTOR_RPM)
+        telemetry.addData("PID target RPM", "%.0f", shooter.targetRpm)
+        telemetry.addData("RPM configuration valid", shooter.rpmConfigurationValid)
+        telemetry.addData(
+            "Raw ticks/s 1 / 2",
+            "%.0f / %.0f",
+            shooter.measuredTicksPerSecond1,
+            shooter.measuredTicksPerSecond2
+        )
+        telemetry.addData(
+            "Encoder position ticks 1 / 2",
+            "%d / %d",
+            shooter.encoderPosition1,
+            shooter.encoderPosition2
+        )
+        telemetry.addData(
+            "PID target ticks/s 1 / 2",
+            "%.0f / %.0f",
+            shooter.targetTicksPerSecond1,
+            shooter.targetTicksPerSecond2
+        )
+        telemetry.addData(
+            "Motor config ticks/rev 1 / 2",
+            "%.0f / %.0f",
+            shooter.configuredTicksPerRev1,
+            shooter.configuredTicksPerRev2
+        )
+        telemetry.addData(
+            "Motor config max ticks/s 1 / 2",
+            "%.0f / %.0f",
+            shooter.configuredMaxTicksPerSecond1,
+            shooter.configuredMaxTicksPerSecond2
+        )
+        telemetry.update()
+    }
+
+    override fun onStop() {
+        vision.stop()
+        drive.stop()
+        intake.setPower(0.0)
+        shooter.setManualBlockerOpen(false)
+        shooter.setFlywheelPower(0.0)
     }
 }
