@@ -33,9 +33,10 @@ class BioBuzzTeleOpRedHive : NextFTCOpMode() {
     // The starting position should be set only once, not every update cycle.
     private var locationInitialized = false
     private var previousXButtonPressed = false
-    private var previousYButtonPressed = false
     private var redHiveHeading: Double? = null
     private var rotatingToRedHive = false
+    private var movingToRedHive = false
+    private var blockerOpen = false
 
     // Used only to show how much each drive encoder changed since the last
     // update. Pinpoint, rather than these drive encoders, provides the location.
@@ -60,6 +61,7 @@ class BioBuzzTeleOpRedHive : NextFTCOpMode() {
         // Build the robot's helper objects and register them with NextFTC.
         intake = IntakeSubsystem(hardwareMap)
         shooter = ShooterSubsystem(hardwareMap)
+        shooter.setControlMode(ShooterSubsystem.ControlMode.MANUAL_POWER)
         robotLocation = RobotLocationSubsystem(hardwareMap)
         vision = VisionSubsystem(hardwareMap)
         addComponents(
@@ -79,13 +81,15 @@ class BioBuzzTeleOpRedHive : NextFTCOpMode() {
                     headingRadians = 0.0
                 )
             )
+            // Set a fixed hive/approach target from the configured TeleOp start.
+            robotLocation.updateRedHiveLocation()
             locationInitialized = true
         }
 
         // The left stick controls forward/backward and sideways movement.
         // The right stick controls rotation.
-        val drive = -gamepad1.left_stick_y.toDouble()
-        val strafe = gamepad1.left_stick_x.toDouble()
+        var drive = -gamepad1.left_stick_y.toDouble()
+        var strafe = gamepad1.left_stick_x.toDouble()
 
         // Encoders count how far motor shafts have rotated. These readings are
         // displayed for debugging and are not used as the main field location.
@@ -125,28 +129,55 @@ class BioBuzzTeleOpRedHive : NextFTCOpMode() {
             gamepad1.left_bumper -> -1.0
             else -> 0.0
         }
-        shooter.setFlywheelPower(shooterPower)
-
-        // B opens the blocker and X closes it.
-        if (gamepad1.b) shooter.setBlockerPosition(true)
-        if (gamepad1.x) shooter.setBlockerPosition(false)
-        val location = robotLocation.getLocation()
-        //Update Red Hive Location
-        if (gamepad1.x && !previousXButtonPressed) {
-            robotLocation.updateHiveLocation()
-            redHiveHeading = null
-            rotatingToRedHive = false
+        if (shooterPower > 0.0) {
+            shooter.updateShot(shooterPower, ShooterSubsystem.ControlMode.MANUAL_POWER)
+        } else {
+            shooter.setFlywheelPower(shooterPower)
         }
-        //Turn to Red Hive Location
-        previousXButtonPressed = gamepad1.x
-        if (gamepad1.y && !previousYButtonPressed) {
+        // Keep the existing B-open/X-close blocker behavior.
+        if (gamepad1.x) blockerOpen = false
+        else if (gamepad1.b) blockerOpen = true
+        shooter.setManualBlockerOpen(blockerOpen)
+        val location = robotLocation.getLocation()
+
+        // X starts auto-aim and travel without changing the saved hive coordinates.
+        if (gamepad1.x && !previousXButtonPressed) {
             redHiveHeading = robotLocation.calculateRotationToRedHive(location)
             rotatingToRedHive = redHiveHeading != null
+            movingToRedHive = robotLocation.redHiveTargetLocation != null
         }
-        previousYButtonPressed = gamepad1.y
+        previousXButtonPressed = gamepad1.x
 
-        // A manual turn input cancels automatic aiming. Otherwise, use heading
-        // feedback to turn toward the saved hive bearing and stop at the target.
+        // Let the driver take over immediately by moving either stick.
+        if (movingToRedHive &&
+            (abs(drive) > MANUAL_INPUT_DEADBAND ||
+                abs(strafe) > MANUAL_INPUT_DEADBAND ||
+                abs(gamepad1.right_stick_x) > MANUAL_INPUT_DEADBAND)
+        ) {
+            movingToRedHive = false
+        }
+        if (movingToRedHive) {
+            val target = robotLocation.redHiveTargetLocation
+            if (target == null) {
+                movingToRedHive = false
+            } else {
+                val deltaX = target.xInches - location.xInches
+                val deltaY = target.yInches - location.yInches
+                val distance = kotlin.math.hypot(deltaX, deltaY)
+                if (distance <= POSITION_TOLERANCE_INCHES) {
+                    movingToRedHive = false
+                } else {
+                    val speed = (distance * POSITION_GAIN)
+                        .coerceIn(MIN_AUTO_DRIVE, MAX_AUTO_DRIVE)
+                    val headingCos = kotlin.math.cos(location.headingRadians)
+                    val headingSin = kotlin.math.sin(location.headingRadians)
+                    drive = speed * (headingCos * deltaX + headingSin * deltaY) / distance
+                    strafe = speed * (headingSin * deltaX - headingCos * deltaY) / distance
+                }
+            }
+        }
+
+        // Heading feedback turns toward the saved hive; manual turning cancels it.
         val manualTurn = gamepad1.right_stick_x.toDouble()
         var turn = manualTurn
         var headingError: Double? = null
@@ -190,9 +221,11 @@ class BioBuzzTeleOpRedHive : NextFTCOpMode() {
         telemetry.addData("Robot X (in)", location.xInches)
         telemetry.addData("Robot Y (in)", location.yInches)
         telemetry.addData("Robot Heading (rad)", location.headingRadians)
+        telemetry.addData("Red Hive Target", robotLocation.redHiveTargetLocation)
+        telemetry.addData("Moving to Red Hive Target", movingToRedHive)
         telemetry.addData(
             "Red Hive Heading (rad)",
-            redHiveHeading ?: "Press X to save hive, then Y to calculate"
+            redHiveHeading ?: "Press X to auto-aim and move to the saved target"
         )
         telemetry.addData(
             "Turning to Red Hive",
@@ -213,6 +246,11 @@ class BioBuzzTeleOpRedHive : NextFTCOpMode() {
 
     private companion object {
         const val HEADING_TOLERANCE_RADIANS = 0.035
+        const val POSITION_TOLERANCE_INCHES = 1.0
+        const val POSITION_GAIN = 0.06
+        const val MIN_AUTO_DRIVE = 0.12
+        const val MAX_AUTO_DRIVE = 0.45
+        const val MANUAL_INPUT_DEADBAND = 0.05
         const val TURN_GAIN = 0.8
         const val MIN_AUTO_TURN = 0.12
         const val MAX_AUTO_TURN = 0.35
