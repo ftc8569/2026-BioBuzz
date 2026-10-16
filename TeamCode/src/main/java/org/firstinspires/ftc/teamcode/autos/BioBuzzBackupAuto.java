@@ -14,8 +14,9 @@ import com.qualcomm.robotcore.eventloop.opmode.OpMode;
 import org.firstinspires.ftc.teamcode.pedro.Constants;
 
 /**
- * Backup auto: one straight line from the start pose to the loading zone, ending facing the
- * alliance wall (LEAVE + PARK). No obstacle avoidance.
+ * Backup auto: one straight line from the start pose to the loading zone (LEAVE + PARK). The robot
+ * is placed FACING its alliance wall and keeps that heading the whole way (it slides sideways, no
+ * turning), so its corners never swing into the wall. No obstacle avoidance.
  * Pedro inches, field 141.5 x 141.5, heading in degrees CCW from +x.
  */
 public abstract class BioBuzzBackupAuto extends OpMode {
@@ -24,20 +25,16 @@ public abstract class BioBuzzBackupAuto extends OpMode {
     private static final double FIELD_IN = 141.5;
     private static final double RED_PARK_X = 0.16 + 3.5 + ROBOT_LENGTH_IN / 2;
 
-    private final double startX, startY, startHeadingDeg, endHeadingDeg, parkX, parkY;
+    private final double startX, startY, startHeadingDeg, parkX, parkY;
 
     private Follower follower;
 
-    /**
-     * Red OpModes pass red coordinates; blue ones pass the 180-degree rotated equivalents.
-     * endHeadingDeg is unwrapped (e.g. 180 -> 360) so the turn direction is explicit.
-     */
+    /** Red OpModes pass red coordinates; blue ones pass the 180-degree rotated equivalents. */
     protected BioBuzzBackupAuto(boolean blue, double startX, double startY, double startHeadingDeg,
-                                double endHeadingDeg, double parkY) {
+                                double parkY) {
         this.startX = startX;
         this.startY = startY;
         this.startHeadingDeg = startHeadingDeg;
-        this.endHeadingDeg = endHeadingDeg;
         this.parkX = blue ? FIELD_IN - RED_PARK_X : RED_PARK_X;
         this.parkY = parkY;
     }
@@ -47,14 +44,14 @@ public abstract class BioBuzzBackupAuto extends OpMode {
         Scheduler.reset();
         PoseFactory p = PoseFactory.degrees();
         Pose startPose = p.of(startX, startY, startHeadingDeg);
-        Pose parkPose = p.of(parkX, parkY, endHeadingDeg);
+        Pose parkPose = p.of(parkX, parkY, startHeadingDeg);
 
         follower = Constants.create(hardwareMap);
         follower.setPose(startPose);
         follower.update();
 
         Path toPark = Paths.line(startPose, parkPose)
-                .linear(Math.toRadians(startHeadingDeg), Math.toRadians(endHeadingDeg));
+                .constant(Math.toRadians(startHeadingDeg));
         Scheduler.schedule(sequential(follow(follower, toPark)));
     }
 
