@@ -16,7 +16,7 @@ class DriveSubsystem(hardwareMap: HardwareMap) : Subsystem {
         frontLeft.direction = DcMotorSimple.Direction.REVERSE
         backLeft.direction = DcMotorSimple.Direction.REVERSE
         listOf(frontLeft, frontRight, backLeft, backRight).forEach {
-            it.zeroPowerBehavior = DcMotor.ZeroPowerBehavior.FLOAT
+            it.zeroPowerBehavior = DcMotor.ZeroPowerBehavior.BRAKE
         }
     }
 
