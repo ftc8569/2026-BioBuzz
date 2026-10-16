@@ -11,7 +11,7 @@ import org.firstinspires.ftc.teamcode.Subsytem.IntakeSubsystem
 import org.firstinspires.ftc.teamcode.Subsytem.FieldLocation
 import org.firstinspires.ftc.teamcode.Subsytem.RobotLocationSubsystem
 import org.firstinspires.ftc.teamcode.Subsytem.ShooterSubsystem
-import org.firstinspires.ftc.teamcode.Subsytem.VisionSubsystem
+// import org.firstinspires.ftc.teamcode.Subsytem.VisionSubsystem
 
 @TeleOp(name = "BioBuzz NextFTC Kotlin TeleOp")
 class BioBuzzTeleOp : NextFTCOpMode() {
@@ -19,7 +19,7 @@ class BioBuzzTeleOp : NextFTCOpMode() {
     private lateinit var intake: IntakeSubsystem
     private lateinit var shooter: ShooterSubsystem
     private lateinit var robotLocation: RobotLocationSubsystem
-    private lateinit var vision: VisionSubsystem
+    // private lateinit var vision: VisionSubsystem
     private lateinit var driveMotors: List<DcMotor>
     private var previousDriveEncoderPositions: IntArray? = null
     private var locationInitialized = false
@@ -41,10 +41,10 @@ class BioBuzzTeleOp : NextFTCOpMode() {
         intake = IntakeSubsystem(hardwareMap)
         shooter = ShooterSubsystem(hardwareMap)
         robotLocation = RobotLocationSubsystem(hardwareMap)
-        vision = VisionSubsystem(hardwareMap)
+        // vision = VisionSubsystem(hardwareMap)
         addComponents(
             BulkReadComponent,
-            SubsystemComponent(drive, intake, shooter, robotLocation, vision)
+            SubsystemComponent(drive, intake, shooter, robotLocation /*, vision */)
         )
     }
 
@@ -216,7 +216,7 @@ class BioBuzzTeleOp : NextFTCOpMode() {
     }
 
     override fun onStop() {
-        vision.stop()
+        // vision.stop()
         drive.stop()
         intake.setPower(0.0)
         shooter.setManualBlockerOpen(false)
