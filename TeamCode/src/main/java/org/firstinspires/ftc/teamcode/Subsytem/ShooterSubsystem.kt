@@ -8,7 +8,7 @@ import com.qualcomm.robotcore.hardware.Servo
 import dev.nextftc.core.subsystems.Subsystem
 import kotlin.math.abs
 
-class ShooterSubsystem(
+class ShooterSubsystem @JvmOverloads constructor(
     hardwareMap: HardwareMap,
     private val nanoTime: () -> Long = System::nanoTime
 ) : Subsystem {
