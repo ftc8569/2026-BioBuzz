@@ -17,7 +17,7 @@
       "controlPoints": [],
       "heading": {
         "type": "linear",
-        "startDeg": 90,
+        "startDeg": 270,
         "endDeg": 180
       },
       "color": "#ffc516",
@@ -31,7 +31,7 @@
       "kind": "atomic",
       "id": "line-mvcs4wab-2f8gne",
       "endPoint": {
-        "x": 9.351798561151071,
+        "x": 13.01654676258992,
         "y": 7.334532374100731
       },
       "controlPoints": [],
@@ -205,5 +205,5 @@
     }
   },
   "version": "1.5.0",
-  "timestamp": "2026-10-17T19:35:55.415Z"
+  "timestamp": "2026-10-17T20:08:57.571Z"
 }
