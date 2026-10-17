@@ -120,7 +120,7 @@ class BioBuzzAutoTest {
             // RPM 2 remains zero: only RPM 1 opens the gate, and feeding stays latched.
             `when`(motors.getValue("shooter1").velocity).thenReturn(3150.0 * 28 / 60)
             auto.loop()
-            verify(blocker).position = 0.45
+            verify(blocker).position = 0.65
             `when`(motors.getValue("shooter1").velocity).thenReturn(0.0)
             clearInvocations(*motors.values.toTypedArray())
             auto.loop()
@@ -135,13 +135,14 @@ class BioBuzzAutoTest {
             now += 1_000_000L
             auto.loop() // The final two seconds finish; all outputs stop automatically.
             for (motor in motors.values) verify(motor).power = 0.0
-            verify(blocker, atLeastOnce()).position = 0.24
+            verify(blocker, atLeastOnce()).position = 0.78
             verify(follower).stop()
             clearInvocations(*motors.values.toTypedArray(), follower)
             auto.loop() // Completion cannot restart shooting or the path.
             verifyNoInteractions(*motors.values.toTypedArray(), follower)
             auto.stop() // A later Driver Station STOP remains safe.
         } finally {
+            auto.stop()
             ShooterPidTuning.kP = gains[0]
             ShooterPidTuning.kI = gains[1]
             ShooterPidTuning.kD = gains[2]

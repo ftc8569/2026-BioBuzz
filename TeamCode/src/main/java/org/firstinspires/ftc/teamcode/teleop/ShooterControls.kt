@@ -5,8 +5,8 @@ import org.firstinspires.ftc.teamcode.Subsytem.ShooterSubsystem
 
 /** Hold Y for manual shooting; preset adjustments happen once per D-pad press. */
 internal class ShooterControls {
-    private var presetSteps = 74
-    val preset: Double get() = presetSteps * 0.01
+    private var presetSteps = 139
+    val preset: Double get() = presetSteps * 0.005
     var mode = ControlMode.VELOCITY_PID
         private set
     val pidTargetRpm: Double?
@@ -17,7 +17,7 @@ internal class ShooterControls {
 
     fun update(y: Boolean, up: Boolean, down: Boolean) {
         mode = if (y) ControlMode.MANUAL_POWER else ControlMode.VELOCITY_PID
-        if (up && !previousUp && !down) presetSteps = (presetSteps + 1).coerceAtMost(100)
+        if (up && !previousUp && !down) presetSteps = (presetSteps + 1).coerceAtMost(200)
         if (down && !previousDown && !up) presetSteps = (presetSteps - 1).coerceAtLeast(0)
         previousUp = up
         previousDown = down

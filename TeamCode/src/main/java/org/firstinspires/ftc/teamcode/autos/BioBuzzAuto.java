@@ -59,6 +59,7 @@ public class BioBuzzAuto extends OpMode {
         intake = new IntakeSubsystem(hardwareMap);
         shooter = new ShooterSubsystem(hardwareMap, nanoTime::getAsLong);
         stage = Stage.DONE;
+        shooter.startVoltagePolling();
     }
 
     @Override
@@ -131,6 +132,7 @@ public class BioBuzzAuto extends OpMode {
 
     @Override
     public void stop() {
+        if (shooter != null) shooter.stopVoltagePolling();
         stage = Stage.DONE;
         feedingStartedNanos = -1L;
         if (follower != null) {
