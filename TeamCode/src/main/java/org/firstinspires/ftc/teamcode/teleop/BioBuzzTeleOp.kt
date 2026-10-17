@@ -16,11 +16,12 @@ import dev.nextftc.core.commands.utility.LambdaCommand
 import dev.nextftc.core.commands.CommandManager
 import dev.nextftc.core.components.SubsystemComponent
 import dev.nextftc.ftc.NextFTCOpMode
-import dev.nextftc.ftc.components.BulkReadComponent
+import com.qualcomm.hardware.lynx.LynxModule
+import com.pedropathing.localization.Localizer
+import com.pedropathing.revhub.localizers.PinpointLocalizer
 import org.firstinspires.ftc.teamcode.Subsytem.DriveSubsystem
 import org.firstinspires.ftc.teamcode.Subsytem.IntakeSubsystem
 import org.firstinspires.ftc.teamcode.Subsytem.FieldLocation
-import org.firstinspires.ftc.teamcode.Subsytem.RobotLocationSubsystem
 import org.firstinspires.ftc.teamcode.Subsytem.ShooterSubsystem
 
 @TeleOp(name = "BioBuzz NextFTC Kotlin TeleOp")
@@ -29,10 +30,18 @@ class BioBuzzTeleOp : NextFTCOpMode() {
     private lateinit var drive: DriveSubsystem
     private lateinit var intake: IntakeSubsystem
     private lateinit var shooter: ShooterSubsystem
-    private lateinit var robotLocation: RobotLocationSubsystem
+    private lateinit var pinpoint: Localizer
+    private val snapshotLocalizer = SnapshotLocalizer()
+    private var hubs: List<LynxModule> = emptyList()
+    private var hardwareFrame: HardwareFrame? = null
+    private var computeStartedNanos: Long? = null
+    private var location = FieldLocation(0.0, 0.0, 0.0)
+    private var hiveLocation: FieldLocation? = null
+    private var g1 = ControlSnapshot()
+    private var g2 = ControlSnapshot()
+    private var driveEncoderPositions: IntArray? = null
     private lateinit var driveMotors: List<DcMotor>
     private var previousDriveEncoderPositions: IntArray? = null
-    private var locationInitialized = false
     private var previousXButtonPressed = false
     private var previousAimButtonPressed = false
     private var blueHiveHeading: Double? = null
@@ -58,12 +67,19 @@ class BioBuzzTeleOp : NextFTCOpMode() {
         (components as MutableSet<Component>).clear()
         addComponents(
             object : Component {
-                override fun preUpdate() = profiler.beginLoop()
+                override fun preUpdate() {
+                    profiler.beginLoop()
+                    hardwareFrame?.begin()
+                    computeStartedNanos = profiler.nanoTime()
+                }
                 override fun postUpdate() = profiler.endLoop()
             },
             *defaultComponents.map { component ->
                 if (component === CommandManager) object : Component by component {
                     override fun postUpdate() = Unit
+                    // Default postStop runs commands once more before cancellation.
+                    // Cancel directly so no controller executes outside a sampled frame.
+                    override fun postStop() = CommandManager.cancelAll()
                 } else component
             }.toTypedArray()
         )
@@ -71,10 +87,16 @@ class BioBuzzTeleOp : NextFTCOpMode() {
     }
 
     override fun runOpMode() {
+        var failure: Throwable? = null
         try {
             super.runOpMode()
+        } catch (t: Throwable) {
+            failure = t
+            throw t
         } finally {
-            if (::shooter.isInitialized) shooter.stopVoltagePolling()
+            try { safeStop() } catch (stopFailure: Exception) {
+                if (failure == null) throw stopFailure else failure.addSuppressed(stopFailure)
+            }
         }
     }
 
@@ -90,13 +112,17 @@ class BioBuzzTeleOp : NextFTCOpMode() {
         intake = IntakeSubsystem(hardwareMap)
         shooter = ShooterSubsystem(hardwareMap)
         shooter.loopProfiler = profiler
-        robotLocation = RobotLocationSubsystem(hardwareMap)
-        // Initialize Pedro last so both Pinpoint readers use the Pedro calibration.
-        shootingDriveHold = ShootingDriveHold(Constants.create(hardwareMap))
-        addComponents(
-            BulkReadComponent,
-            SubsystemComponent(drive, intake, shooter, robotLocation)
-        )
+        drive.enablePhasedIo()
+        intake.enablePhasedIo()
+        shooter.enablePhasedIo()
+        // One physical localizer, using exactly the Pedro calibration used before this refactor.
+        pinpoint = PinpointLocalizer(hardwareMap, Constants.localizerConfig)
+        shootingDriveHold = ShootingDriveHold(Constants.create(
+            snapshotLocalizer, BufferedMecanum { powers, threshold -> drive.requestWheelPowers(powers, threshold) }))
+        hubs = hardwareMap.getAll(LynxModule::class.java)
+        hubs.forEach { it.bulkCachingMode = LynxModule.BulkCachingMode.MANUAL }
+        hardwareFrame = HardwareFrame(::readInputs, ::writeOutputs)
+        addComponents(SubsystemComponent(drive, intake, shooter))
         shooter.startVoltagePolling()
     }
 
@@ -104,6 +130,7 @@ class BioBuzzTeleOp : NextFTCOpMode() {
         loopTiming.reset()
         profiler.reset()
         timingRows = emptyList()
+        profiler.measure(LoopStage.LOCATION_RESET) { pinpoint.setPose(Pose.zero()) }
         LambdaCommand("Driver control")
             .setIsDone { false }
             .setUpdate { updateDrive() }
@@ -125,38 +152,28 @@ class BioBuzzTeleOp : NextFTCOpMode() {
 
     private fun updateDrive() {
         profiler.measure(LoopStage.DRIVE_TOTAL) {
-            if (!locationInitialized) {
-                profiler.measure(LoopStage.LOCATION_RESET) {
-                    robotLocation.setStartingLocation(FieldLocation(0.0, 0.0, 0.0))
-                }
-                locationInitialized = true
-            }
-            if (detailedLogging) {
-                val positions = profiler.measure(LoopStage.DRIVE_ENCODERS) {
-                    driveMotors.map { it.currentPosition }.toIntArray()
-                }
+            driveEncoderPositions?.let { positions ->
                 val previousPositions = previousDriveEncoderPositions ?: positions
-                profiler.measure(LoopStage.DRIVE_TELEMETRY) {
+                if (detailedLogging) profiler.measure(LoopStage.DRIVE_TELEMETRY) {
                     telemetry.addData("Drive encoder delta (ticks)", "FL %d, FR %d, BL %d, BR %d",
                         positions[0] - previousPositions[0], positions[1] - previousPositions[1],
                         positions[2] - previousPositions[2], positions[3] - previousPositions[3])
                 }
                 previousDriveEncoderPositions = positions
             }
-            val location = profiler.measure(LoopStage.PINPOINT) { robotLocation.getLocation() }
-            if (gamepad1.x && !previousXButtonPressed) {
-                profiler.measure(LoopStage.HIVE_SAVE) { robotLocation.updateHiveLocation() }
+            if (g1.x && !previousXButtonPressed) {
+                hiveLocation = location
                 blueHiveHeading = null
                 rotatingToBlueHive = false
             }
-            previousXButtonPressed = gamepad1.x
+            previousXButtonPressed = g1.x
             // Gamepad 1 Y is reserved for hold-to-run manual shooting.
-            if (gamepad2.y && !previousAimButtonPressed) {
-                blueHiveHeading = robotLocation.calculateRotationToBlueHive(location)
+            if (g2.y && !previousAimButtonPressed) {
+                blueHiveHeading = hiveLocation?.let { kotlin.math.atan2(it.yInches - location.yInches, it.xInches - location.xInches) }
                 rotatingToBlueHive = blueHiveHeading != null
             }
-            previousAimButtonPressed = gamepad2.y
-            val manualTurn = gamepad1.right_stick_x.toDouble()
+            previousAimButtonPressed = g2.y
+            val manualTurn = g1.right_stick_x.toDouble()
             var turn = manualTurn
             var headingError: Double? = null
             if (kotlin.math.abs(manualTurn) > 0.05) {
@@ -177,9 +194,8 @@ class BioBuzzTeleOp : NextFTCOpMode() {
                     }
                 }
             }
-            val shooting = (gamepad1.right_bumper || gamepad1.y) && !gamepad1.left_bumper
+            val shooting = (g1.right_bumper || g1.y) && !g1.left_bumper
             if (shooting && !shootingDriveHold.active) {
-                profiler.measure(LoopStage.DRIVE_OUTPUT) { drive.stop() }
                 rotatingToBlueHive = false
             }
             val holdPose = Pose(location.xInches, location.yInches, location.headingRadians)
@@ -189,9 +205,7 @@ class BioBuzzTeleOp : NextFTCOpMode() {
                 shootingDriveHold.update(shooting, holdPose)
             }
             if (!holding) {
-                profiler.measure(LoopStage.DRIVE_OUTPUT) {
-                    drive.drive(-gamepad1.left_stick_y.toDouble(), gamepad1.left_stick_x.toDouble(), turn)
-                }
+                drive.drive(-g1.left_stick_y.toDouble(), g1.left_stick_x.toDouble(), turn)
             }
             if (detailedLogging) {
                 profiler.measure(LoopStage.DRIVE_TELEMETRY) {
@@ -224,14 +238,14 @@ class BioBuzzTeleOp : NextFTCOpMode() {
 
     private fun updateMechanisms() {
         profiler.measure(LoopStage.MECHANISMS_TOTAL) {
-            driveIntakeControls.update(gamepad1.left_stick_button)
-            val dpadUp = gamepad1.dpad_up || gamepad2.dpad_up
-            val dpadDown = gamepad1.dpad_down || gamepad2.dpad_down
-            shooterControls.update(gamepad1.y, dpadUp, dpadDown)
+            driveIntakeControls.update(g1.left_stick_button)
+            val dpadUp = g1.dpad_up || g2.dpad_up
+            val dpadDown = g1.dpad_down || g2.dpad_down
+            shooterControls.update(g1.y, dpadUp, dpadDown)
 
             currentShooterPower = shooterControls.requestedPower(
-                reverse = gamepad1.left_bumper,
-                pidShoot = gamepad1.right_bumper
+                reverse = g1.left_bumper,
+                pidShoot = g1.right_bumper
             )
 
             profiler.measure(LoopStage.SHOOTER_CONTROL) {
@@ -242,17 +256,17 @@ class BioBuzzTeleOp : NextFTCOpMode() {
                     shooter.setFlywheelPower(currentShooterPower)
                 }
             }
-            val manualBlockerOpen = gamepad1.b || gamepad2.b
+            val manualBlockerOpen = g1.b || g2.b
             shooter.setManualBlockerOpen(manualBlockerOpen)
 
             val manualIntakePower = when {
-                gamepad1.right_trigger > 0.05 -> gamepad1.right_trigger.toDouble()
-                gamepad1.left_trigger > 0.05 -> -gamepad1.left_trigger.toDouble()
+                g1.right_trigger > 0.05 -> g1.right_trigger.toDouble()
+                g1.left_trigger > 0.05 -> -g1.left_trigger.toDouble()
                 else -> 0.0
             }
 
             currentIntakePower = FeedControls.intakePower(
-                stop = gamepad1.a,
+                stop = g1.a,
                 manualPower = manualIntakePower,
                 shooterPower = currentShooterPower,
                 preset = 1.0,
@@ -263,12 +277,14 @@ class BioBuzzTeleOp : NextFTCOpMode() {
             )
 
             currentIntakePower = blockerFeedDelay.apply(currentIntakePower, shooter.blockerOpen)
-            profiler.measure(LoopStage.INTAKE_OUTPUT) { intake.setPower(currentIntakePower) }
+            intake.setPower(currentIntakePower)
         }
     }
 
     override fun onUpdate() {
-        updateLoggingToggle()
+        computeStartedNanos?.let { profiler.record(LoopStage.COMPUTE, profiler.nanoTime() - it) }
+        computeStartedNanos = null
+        hardwareFrame?.commit()
         loopTiming.update()
         if (!detailedLogging) {
             profiler.measure(LoopStage.TELEMETRY_BUILD) {
@@ -300,10 +316,10 @@ class BioBuzzTeleOp : NextFTCOpMode() {
             telemetry.addData("Shooter preset (G1/G2 up/down)", "%.3f", shooterPreset)
             telemetry.addData("Shooter mode (hold G1 Y for manual)", shooterMode)
             telemetry.addData("Shooter speed state", shooter.speedStatus)
-            telemetry.addData("D-pad seen (up/down)", "%s / %s", gamepad1.dpad_up || gamepad2.dpad_up, gamepad1.dpad_down || gamepad2.dpad_down)
+            telemetry.addData("D-pad seen (up/down)", "%s / %s", g1.dpad_up || g2.dpad_up, g1.dpad_down || g2.dpad_down)
             telemetry.addData("Shooter requested fraction", "%.2f", currentShooterPower)
             telemetry.addData("Shooter motor power 1 / 2", "%.2f / %.2f", shooter.flywheelPower1, shooter.flywheelPower2)
-            telemetry.addData("Manual blocker (G1/G2 B)", gamepad1.b || gamepad2.b)
+            telemetry.addData("Manual blocker (G1/G2 B)", g1.b || g2.b)
             telemetry.addData("Blocker open", shooter.blockerOpen)
             telemetry.addData("Flywheel 1 within 5 percent of target", shooter.atSpeed)
             telemetry.addData("Automatic feed ready", shooter.feedReady)
@@ -328,7 +344,7 @@ class BioBuzzTeleOp : NextFTCOpMode() {
     }
 
     private fun updateLoggingToggle() {
-        val pressed = gamepad1.right_stick_button
+        val pressed = g1.right_stick_button
         if (pressed && !previousLoggingButton) {
             detailedLogging = !detailedLogging
             // Resume deltas from a fresh baseline after diagnostic reads were skipped.
@@ -360,12 +376,52 @@ class BioBuzzTeleOp : NextFTCOpMode() {
         }
     }
 
-    override fun onStop() {
-        shooter.stopVoltagePolling()
-        shootingDriveHold.stop()
-        drive.stop()
-        intake.setPower(0.0)
-        shooter.setManualBlockerOpen(false)
-        shooter.setFlywheelPower(0.0)
+    internal fun captureControls() {
+        g1 = ControlSnapshot.capture(gamepad1)
+        g2 = ControlSnapshot.capture(gamepad2)
+        updateLoggingToggle()
     }
+
+    private fun readInputs() = profiler.measure(LoopStage.READ_INPUTS) {
+        captureControls()
+        // Clearing is local bookkeeping. First motor read lazily requests one bulk response
+        // per needed hub; subsequent encoder/velocity getters use that same response.
+        profiler.measure(LoopStage.BULK_CACHE) { hubs.forEach { it.clearBulkCache() } }
+        shooter.beginFrame()
+        driveEncoderPositions = if (detailedLogging) profiler.measure(LoopStage.DRIVE_ENCODERS) {
+            driveMotors.map { it.currentPosition }.toIntArray()
+        } else null
+        profiler.measure(LoopStage.PINPOINT) {
+            pinpoint.update()
+            snapshotLocalizer.capture(pinpoint.state())
+            val pose = snapshotLocalizer.pose()
+            location = FieldLocation(pose.x(), pose.y(), pose.heading())
+        }
+    }
+
+    private fun writeOutputs() = profiler.measure(LoopStage.WRITE_OUTPUTS) {
+        profiler.measure(LoopStage.DRIVE_OUTPUT) { drive.commitOutputs() }
+        shooter.commitOutputs()
+        profiler.measure(LoopStage.INTAKE_OUTPUT) { intake.commitOutputs() }
+    }
+
+    /** Try every safe output even if another device throws; never rely on cached equality. */
+    private fun safeStop() {
+        val actions = listOf<() -> Unit>(
+            { CommandManager.cancelAll() },
+            { if (::shooter.isInitialized) shooter.stopVoltagePolling() },
+            { if (::shootingDriveHold.isInitialized) shootingDriveHold.stop() },
+            { if (::drive.isInitialized) drive.forceStop() },
+            { if (::intake.isInitialized) intake.forceStop() },
+            { if (::shooter.isInitialized) shooter.forceStop() })
+        var failure: Throwable? = null
+        actions.forEach { action ->
+            try { action() } catch (t: Exception) {
+                if (failure == null) failure = t else failure.addSuppressed(t)
+            }
+        }
+        failure?.let { throw it }
+    }
+
+    override fun onStop() = safeStop()
 }

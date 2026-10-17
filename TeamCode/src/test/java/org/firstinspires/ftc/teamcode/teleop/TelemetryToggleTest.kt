@@ -21,6 +21,8 @@ class TelemetryToggleTest {
         BioBuzzTeleOp::class.java.getDeclaredField(name).apply { isAccessible = true }.set(opMode, value)
     }
 
+    private fun render(opMode: BioBuzzTeleOp) { opMode.captureControls(); opMode.onUpdate() }
+
     private fun opMode(nanoTime: () -> Long = { 0L }): BioBuzzTeleOp = BioBuzzTeleOp().apply {
         telemetry = mock(Telemetry::class.java)
         gamepad1 = Gamepad()
@@ -32,9 +34,9 @@ class TelemetryToggleTest {
     @Test fun `right stick click hides non-timing telemetry and holding does not toggle repeatedly`() {
         val opMode = opMode()
         opMode.gamepad1.right_stick_button = true
-        repeat(3) { opMode.onUpdate() }
+        repeat(3) { render(opMode) }
         opMode.gamepad1.right_stick_button = false
-        opMode.onUpdate()
+        render(opMode)
         // Uninitialized shooter/hold fields must never be evaluated in quiet mode.
         verify(opMode.telemetry).clearAll()
         verify(opMode.telemetry, times(4)).addData(eq("Loop interval (ms)"), eq("%.2f"), anyDouble())
@@ -46,16 +48,16 @@ class TelemetryToggleTest {
         val opMode = opMode()
         setField(opMode, "shooter", mock(ShooterSubsystem::class.java))
         setField(opMode, "shootingDriveHold", mock(ShootingDriveHold::class.java))
-        opMode.onUpdate()
+        render(opMode)
         verify(opMode.telemetry).addData("Detailed logging (G1 right-stick click)", "On")
         opMode.gamepad1.right_stick_button = true
-        opMode.onUpdate()
+        render(opMode)
         opMode.gamepad1.right_stick_button = false
-        opMode.onUpdate()
+        render(opMode)
         setField(opMode, "previousDriveEncoderPositions", intArrayOf(1, 2, 3, 4))
         clearInvocations(opMode.telemetry)
         opMode.gamepad1.right_stick_button = true
-        opMode.onUpdate()
+        render(opMode)
         verify(opMode.telemetry).clearAll()
         verify(opMode.telemetry).addData("Detailed logging (G1 right-stick click)", "On")
         verify(opMode.telemetry).addData(eq("Shooter flywheel 1 RPM"), eq("%.0f"), anyDouble())
@@ -66,7 +68,7 @@ class TelemetryToggleTest {
     @Test fun `quiet driver and mechanism callbacks still control hardware without diagnostic reads`() {
         val opMode = opMode()
         opMode.gamepad1.right_stick_button = true
-        opMode.onUpdate()
+        render(opMode)
         val motors = List(4) { mock(DcMotor::class.java) }
         val drive = mock(DriveSubsystem::class.java)
         val intake = mock(IntakeSubsystem::class.java)
@@ -77,8 +79,6 @@ class TelemetryToggleTest {
         setField(opMode, "drive", drive)
         setField(opMode, "intake", intake)
         setField(opMode, "shooter", shooter)
-        setField(opMode, "robotLocation", location)
-        setField(opMode, "locationInitialized", true)
         setField(opMode, "shootingDriveHold", mock(ShootingDriveHold::class.java))
         clearInvocations(opMode.telemetry)
         for (callback in listOf("updateDrive", "updateMechanisms")) {
@@ -97,11 +97,11 @@ class TelemetryToggleTest {
             .apply { isAccessible = true }.get(opMode) as LoopProfiler
         profiler.record(LoopStage.PINPOINT, 9_000_000)
         opMode.gamepad1.right_stick_button = true
-        opMode.onUpdate()
+        render(opMode)
         profiler.record(LoopStage.PINPOINT, 3_000_000)
         now = 1_000_000_000
         mockStatic(RobotLog::class.java).use { logs ->
-            opMode.onUpdate()
+            render(opMode)
             verify(opMode.telemetry).addData("Timing: Pinpoint location read", "avg=6.000 ms max=9.000 ms n=2")
             logs.verify { RobotLog.ii(eq("BioBuzzLoop"), contains("Pinpoint location read: avg=6.000 ms")) }
         }

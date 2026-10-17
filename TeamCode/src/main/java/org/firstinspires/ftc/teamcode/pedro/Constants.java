@@ -24,6 +24,12 @@ public class Constants {
                 new Foresight(foresightConfig));
     }
 
+    /** TeleOp supplies snapshot-only localization and its shared buffered motor owner. */
+    public static Follower create(com.pedropathing.localization.Localizer localizer,
+                                  com.pedropathing.drivetrain.Drivetrain drivetrain) {
+        return new Follower(localizer, drivetrain, new Foresight(foresightConfig));
+    }
+
     public static MecanumConfig drivetrainConfig = new MecanumConfig(c -> {
         c.frontLeftName.set("driveFL");
         c.frontRightName.set("driveFR");

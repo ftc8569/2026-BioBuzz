@@ -12,6 +12,51 @@ class DriveSubsystem(hardwareMap: HardwareMap) : Subsystem {
     private val backLeft = hardwareMap.get(DcMotor::class.java, "driveBL")
     private val backRight = hardwareMap.get(DcMotor::class.java, "driveBR")
 
+    private val motors = listOf(frontLeft, frontRight, backLeft, backRight)
+    private var phasedIo = false
+    private var desired = DoubleArray(4)
+    private val committed = DoubleArray(4) { Double.NaN }
+    private var threshold = 0.0
+
+    internal fun enablePhasedIo() {
+        phasedIo = true
+        // Establish modes once; no recurring mode/direction traffic in the loop.
+        motors.forEachIndexed { index, motor ->
+            motor.direction = if (index == 0 || index == 2) DcMotorSimple.Direction.REVERSE else DcMotorSimple.Direction.FORWARD
+            motor.mode = DcMotor.RunMode.RUN_WITHOUT_ENCODER
+            motor.zeroPowerBehavior = DcMotor.ZeroPowerBehavior.FLOAT
+        }
+        forceStop()
+    }
+
+    /** Both manual and Pedro requests go through this one output cache. */
+    internal fun requestWheelPowers(powers: DoubleArray, powerThreshold: Double = 0.0) {
+        require(powers.size == 4)
+        for (i in desired.indices) desired[i] = if (powers[i].isFinite()) powers[i].coerceIn(-1.0, 1.0) else 0.0
+        threshold = powerThreshold
+        commandedPowerMagnitude = desired.maxOf { abs(it) }
+        if (!phasedIo) commitOutputs(force = true)
+    }
+
+    internal fun commitOutputs(force: Boolean = false) {
+        outputWrites(force, motors.size) { i ->
+            val motor = motors[i]
+            val value = desired[i]
+            val previous = committed[i]
+            if (force || previous.isNaN() || (value != previous &&
+                (abs(value - previous) >= threshold || kotlin.math.sign(value) != kotlin.math.sign(previous)))) {
+                motor.power = value
+                committed[i] = value
+            }
+        }
+        commandedPowerMagnitude = committed.maxOf { if (it.isFinite()) abs(it) else 0.0 }
+    }
+
+    internal fun forceStop() {
+        desired = DoubleArray(4)
+        commitOutputs(force = true)
+    }
+
     var commandedPowerMagnitude = 0.0
         private set
 
@@ -26,11 +71,7 @@ class DriveSubsystem(hardwareMap: HardwareMap) : Subsystem {
         val fr = (forward - strafe - turn) / denominator * 0.9
         val bl = (forward - strafe + turn) / denominator * 0.9
         val br = (forward + strafe - turn) / denominator * 0.9
-        frontLeft.power = fl
-        frontRight.power = fr
-        backLeft.power = bl
-        backRight.power = br
-        commandedPowerMagnitude = maxOf(abs(fl), abs(fr), abs(bl), abs(br))
+        requestWheelPowers(doubleArrayOf(fl, fr, bl, br))
     }
 
     fun stop() = drive(0.0, 0.0, 0.0)

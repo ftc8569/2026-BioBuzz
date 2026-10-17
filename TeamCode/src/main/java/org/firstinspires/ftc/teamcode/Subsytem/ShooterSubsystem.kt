@@ -28,6 +28,50 @@ class ShooterSubsystem(
         }
     private val blocker = hardwareMap.get(Servo::class.java, "blocker")
 
+    private val flywheels = listOf(shooter1, shooter2)
+    private var phasedIo = false
+    private var frameVoltage = 12.0
+    private var desiredPower = 0.0
+    private var desiredBlockerPosition = BLOCKER_CLOSED
+    private val committedPower = DoubleArray(2) { Double.NaN }
+    private var committedBlocker = Double.NaN
+
+    /** TeleOp alone opts in; autonomous keeps the same immediate controller API. */
+    internal fun enablePhasedIo() { phasedIo = true; forceStop() }
+
+    internal fun beginFrame() {
+        frameVoltage = batteryVoltage.voltage
+        sampleSpeeds()
+    }
+
+    internal fun commitOutputs(force: Boolean = false) {
+        // A forced stop tries both flywheels AND the blocker, even after a device failure.
+        outputWrites(force, 2) { group ->
+            if (group == 0) timed(LoopStage.SHOOTER_OUTPUT) {
+                outputWrites(force, flywheels.size) { i ->
+                    if (force || desiredPower != committedPower[i]) {
+                        flywheels[i].power = desiredPower
+                        committedPower[i] = desiredPower
+                    }
+                }
+            } else timed(LoopStage.BLOCKER_OUTPUT) {
+                if (force || desiredBlockerPosition != committedBlocker) {
+                    blocker.position = desiredBlockerPosition
+                    committedBlocker = desiredBlockerPosition
+                }
+            }
+        }
+    }
+
+    internal fun forceStop() {
+        resetSpeedHold()
+        manualBlockerOpen = false
+        blockerOpen = false
+        desiredPower = 0.0
+        desiredBlockerPosition = BLOCKER_CLOSED
+        commitOutputs(force = true)
+    }
+
     // Counts per shaft revolution: the confirmed 1:1 goBILDA profile uses 28.
     val configuredTicksPerRev1 = shooter1.motorType.ticksPerRev
     val configuredTicksPerRev2 = shooter2.motorType.ticksPerRev
@@ -55,9 +99,9 @@ class ShooterSubsystem(
         private set
     var encoderPosition2 = 0
         private set
-    val flywheelPower1: Double get() = shooter1.power
-    val flywheelPower2: Double get() = shooter2.power
-    val blockerCommandedPosition: Double get() = blocker.position
+    val flywheelPower1: Double get() = if (phasedIo) desiredPower else shooter1.power
+    val flywheelPower2: Double get() = if (phasedIo) desiredPower else shooter2.power
+    val blockerCommandedPosition: Double get() = if (phasedIo) desiredBlockerPosition else blocker.position
     var blockerOpen = false
         private set
     var blockerStatus = "Shooter off"
@@ -194,12 +238,12 @@ class ShooterSubsystem(
 
     /** Inputs and PIDF gains express power at 12 V; clamp only after compensation. */
     private fun applyNormalizedPower(power: Double) {
-        timed(LoopStage.SHOOTER_OUTPUT) {
-            val voltage = batteryVoltage.voltage
-            val normalized = if (power.isFinite())
-                (power * (NOMINAL_VOLTAGE / voltage)).coerceIn(-1.0, 1.0) else 0.0
-            shooter1.power = normalized
-            shooter2.power = normalized
+        val voltage = if (phasedIo) frameVoltage else batteryVoltage.voltage
+        desiredPower = if (power.isFinite())
+            (power * (NOMINAL_VOLTAGE / voltage)).coerceIn(-1.0, 1.0) else 0.0
+        if (!phasedIo) timed(LoopStage.SHOOTER_OUTPUT) {
+            shooter1.power = desiredPower
+            shooter2.power = desiredPower
         }
     }
 
@@ -231,6 +275,7 @@ class ShooterSubsystem(
     }
 
     private fun setRunWithoutEncoder() {
+        if (phasedIo) return
         timed(LoopStage.SHOOTER_MODES) {
             shooter1.mode = DcMotor.RunMode.RUN_WITHOUT_ENCODER
             shooter2.mode = DcMotor.RunMode.RUN_WITHOUT_ENCODER
@@ -239,13 +284,12 @@ class ShooterSubsystem(
 
     private fun stopFlywheels() {
         setRunWithoutEncoder()
-        timed(LoopStage.SHOOTER_OUTPUT) {
-            shooter1.power = 0.0
-            shooter2.power = 0.0
-        }
+        applyNormalizedPower(0.0)
     }
 
-    private fun readSpeeds() {
+    private fun readSpeeds() { if (!phasedIo) sampleSpeeds() }
+
+    private fun sampleSpeeds() {
         timed(LoopStage.SHOOTER_ENCODERS) {
             encoderPosition1 = shooter1.currentPosition
             encoderPosition2 = shooter2.currentPosition
@@ -273,16 +317,15 @@ class ShooterSubsystem(
     }
 
     private fun updateBlocker() {
-        timed(LoopStage.BLOCKER_OUTPUT) {
-            val manualOpenAllowed = manualBlockerOpen && controlMode == ControlMode.MANUAL_POWER
-            blockerOpen = manualOpenAllowed || feedReady
-            blockerStatus = when {
-                manualOpenAllowed -> "Manual open"
-                requestedPower > 0.0 -> feedReadiness
-                manualBlockerOpen -> "Manual override disabled in PID"
-                else -> "Shooter off"
-            }
-            blocker.position = if (blockerOpen) BLOCKER_OPEN else BLOCKER_CLOSED
+        val manualOpenAllowed = manualBlockerOpen && controlMode == ControlMode.MANUAL_POWER
+        blockerOpen = manualOpenAllowed || feedReady
+        blockerStatus = when {
+            manualOpenAllowed -> "Manual open"
+            requestedPower > 0.0 -> feedReadiness
+            manualBlockerOpen -> "Manual override disabled in PID"
+            else -> "Shooter off"
         }
+        desiredBlockerPosition = if (blockerOpen) BLOCKER_OPEN else BLOCKER_CLOSED
+        if (!phasedIo) timed(LoopStage.BLOCKER_OUTPUT) { blocker.position = desiredBlockerPosition }
     }
 }
