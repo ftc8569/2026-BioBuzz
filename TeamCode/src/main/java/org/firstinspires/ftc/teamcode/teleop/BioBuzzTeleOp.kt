@@ -33,6 +33,7 @@ class BioBuzzTeleOp : NextFTCOpMode() {
     private lateinit var pinpoint: Localizer
     private val snapshotLocalizer = SnapshotLocalizer()
     private var hubs: List<LynxModule> = emptyList()
+    private var bulkInputReader = BulkInputReader(emptyList(), emptyList(), emptyList())
     private var hardwareFrame: HardwareFrame? = null
     private var computeStartedNanos: Long? = null
     private var location = FieldLocation(0.0, 0.0, 0.0)
@@ -121,6 +122,8 @@ class BioBuzzTeleOp : NextFTCOpMode() {
             snapshotLocalizer, BufferedMecanum { powers, threshold -> drive.requestWheelPowers(powers, threshold) }))
         hubs = hardwareMap.getAll(LynxModule::class.java)
         hubs.forEach { it.bulkCachingMode = LynxModule.BulkCachingMode.MANUAL }
+        bulkInputReader = BulkInputReader(hubs,
+            listOf("shooter1", "shooter2").map { hardwareMap.get(DcMotor::class.java, it) }, driveMotors)
         hardwareFrame = HardwareFrame(::readInputs, ::writeOutputs)
         addComponents(SubsystemComponent(drive, intake, shooter))
         shooter.startVoltagePolling()
@@ -384,9 +387,8 @@ class BioBuzzTeleOp : NextFTCOpMode() {
 
     private fun readInputs() = profiler.measure(LoopStage.READ_INPUTS) {
         captureControls()
-        // Clearing is local bookkeeping. First motor read lazily requests one bulk response
-        // per needed hub; subsequent encoder/velocity getters use that same response.
-        profiler.measure(LoopStage.BULK_CACHE) { hubs.forEach { it.clearBulkCache() } }
+        // Fetch once per needed hub, before any cached motor feedback is decoded.
+        profiler.measure(LoopStage.BULK_READ) { bulkInputReader.read(detailedLogging) }
         shooter.beginFrame()
         driveEncoderPositions = if (detailedLogging) profiler.measure(LoopStage.DRIVE_ENCODERS) {
             driveMotors.map { it.currentPosition }.toIntArray()

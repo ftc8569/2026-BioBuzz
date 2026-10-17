@@ -34,17 +34,26 @@ class DriveSubsystem(hardwareMap: HardwareMap) : Subsystem {
         require(powers.size == 4)
         for (i in desired.indices) desired[i] = if (powers[i].isFinite()) powers[i].coerceIn(-1.0, 1.0) else 0.0
         threshold = powerThreshold
-        commandedPowerMagnitude = desired.maxOf { abs(it) }
+        // Intake assist computes in this frame, so expose what the writer will actually
+        // send/retain, including Pedro's deadband against the last successful command.
+        commandedPowerMagnitude = desired.indices.maxOf { i ->
+            abs(if (shouldWrite(i)) desired[i] else committed[i])
+        }
         if (!phasedIo) commitOutputs(force = true)
+    }
+
+    private fun shouldWrite(i: Int): Boolean {
+        val previous = committed[i]
+        val value = desired[i]
+        return previous.isNaN() || (value != previous &&
+            (abs(value - previous) >= threshold || kotlin.math.sign(value) != kotlin.math.sign(previous)))
     }
 
     internal fun commitOutputs(force: Boolean = false) {
         outputWrites(force, motors.size) { i ->
             val motor = motors[i]
             val value = desired[i]
-            val previous = committed[i]
-            if (force || previous.isNaN() || (value != previous &&
-                (abs(value - previous) >= threshold || kotlin.math.sign(value) != kotlin.math.sign(previous)))) {
+            if (force || shouldWrite(i)) {
                 motor.power = value
                 committed[i] = value
             }

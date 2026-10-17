@@ -4,7 +4,7 @@ internal enum class LoopStage(val label: String) {
     LOOP_INTERVAL("Loop interval"),
     LOOP_WORK("Loop work total"),
     READ_INPUTS("Read inputs phase"),
-    BULK_CACHE("Hub bulk cache clear"),
+    BULK_READ("Hub bulk read transactions"),
     COMPUTE("Control compute phase"),
     WRITE_OUTPUTS("Write outputs phase"),
     DRIVE_TOTAL("Drive total"),

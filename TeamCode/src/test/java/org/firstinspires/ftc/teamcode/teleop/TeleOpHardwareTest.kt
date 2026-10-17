@@ -24,6 +24,9 @@ class TeleOpHardwareTest {
             val type = mock(MotorConfigurationType::class.java)
             `when`(type.ticksPerRev).thenReturn(28.0)
             `when`(it.motorType).thenReturn(type)
+            val controller = mock(DcMotorController::class.java)
+            `when`(controller.connectionInfo).thenReturn("USB module 1")
+            `when`(it.controller).thenReturn(controller)
         } }
         val servo = mock(Servo::class.java)
         val hub = mock(LynxModule::class.java)
@@ -43,6 +46,8 @@ class TeleOpHardwareTest {
             val intake = IntakeSubsystem(map).also { it.enablePhasedIo() }
             set("drive", drive); set("shooter", shooter); set("intake", intake)
             set("driveMotors", motors.take(4)); set("hubs", listOf(hub)); set("pinpoint", physical)
+            `when`(hub.connectionInfo).thenReturn("USB module 1")
+            set("bulkInputReader", BulkInputReader(listOf(hub), motors.slice(4..5), motors.take(4)))
             val snapshot = field("snapshotLocalizer") as SnapshotLocalizer
             set("shootingDriveHold", ShootingDriveHold(Constants.create(snapshot, BufferedMecanum { p, t -> drive.requestWheelPowers(p,t) })))
             set("hardwareFrame", HardwareFrame({ call("readInputs") }, { call("writeOutputs") }))
@@ -64,7 +69,7 @@ class TeleOpHardwareTest {
         r.op.gamepad1.b = true
         r.read()
         val order = inOrder(r.hub, r.motors[4], r.physical)
-        order.verify(r.hub).clearBulkCache()
+        order.verify(r.hub).bulkData
         order.verify(r.motors[4]).currentPosition
         order.verify(r.physical).update()
         verify(r.physical, times(1)).state()
@@ -106,4 +111,20 @@ class TeleOpHardwareTest {
             verify(r.servo).position = 0.78
         }
     }
+    @Test fun `bulk transaction time is recorded before feedback getter decoding`() {
+        val r = Rig()
+        var now = 0L
+        val profiler = org.firstinspires.ftc.teamcode.diagnostics.LoopProfiler { now }
+        r.set("profiler", profiler)
+        r.shooter.loopProfiler = profiler
+        `when`(r.hub.bulkData).thenAnswer { now += 7_000_000; null }
+        r.read()
+        now += 1_000_000_000
+        val samples = profiler.snapshotIfDue()!!
+        val bulk = samples.first { it.stage.label == "Hub bulk read transactions" }
+        assertEquals(7.0, bulk.averageMs, 0.0)
+        val decode = samples.first { it.stage == org.firstinspires.ftc.teamcode.diagnostics.LoopStage.SHOOTER_ENCODERS }
+        assertEquals(0.0, decode.averageMs, 0.0)
+    }
+
 }
