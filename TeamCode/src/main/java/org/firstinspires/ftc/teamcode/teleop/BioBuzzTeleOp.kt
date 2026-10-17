@@ -1,5 +1,7 @@
 package org.firstinspires.ftc.teamcode.teleop
 
+import com.bylazar.telemetry.JoinedTelemetry
+import com.bylazar.telemetry.PanelsTelemetry
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp
 import com.qualcomm.robotcore.hardware.DcMotor
 import dev.nextftc.core.commands.utility.LambdaCommand
@@ -32,6 +34,7 @@ class BioBuzzTeleOp : NextFTCOpMode() {
     private var currentIntakePower = 0.0
 
     override fun onInit() {
+        telemetry = JoinedTelemetry(telemetry, PanelsTelemetry.ftcTelemetry)
         telemetry.setMsTransmissionInterval(50)
         drive = DriveSubsystem(hardwareMap)
         driveMotors = listOf("driveFL", "driveFR", "driveBL", "driveBR")

@@ -2,12 +2,12 @@
 
 ## Target and units
 
-The shooter now starts in PID at 66%. It uses the supplied full-speed calculation:
+The shooter now starts in PID at 64%. It uses the supplied full-speed calculation:
 
 ```text
 maximum motor RPM = (3600 / 8) * 10 = 4500
 RPM target = selected fraction * 4500
-66% -> 2970 RPM; 68% -> 3060 RPM; 100% -> 4500 RPM
+64% -> 2880 RPM; 66% -> 2970 RPM; 100% -> 4500 RPM
 measured RPM = abs(DcMotorEx.getVelocity()) * 60 / motorType.ticksPerRev
 ```
 
@@ -35,8 +35,8 @@ For target `T`, measured motor RPM `V`, and elapsed time `dt` in seconds:
 ```text
 error = T - V
 kF = 1 / 4500
-kP = 0.6 / 4500
-kI = 0.25 / 4500
+kP = 2.0 / 4500
+kI = 0.75 / 4500
 output = kF*T + kP*error + integralPower
 integralPower += kI*error*dt
 ```
@@ -53,7 +53,7 @@ Both motors must be within 5% of the RPM target for 150 continuous milliseconds
 before the blocker opens and forward feeding starts. Falling outside tolerance
 immediately resets the dwell, closes the blocker, and stops forward intake.
 Recovery resumes feeding automatically. B never overrides this gate in PID,
-including while idle. Y toggles to manual power, where the old three-second
+including while idle. Holding Y runs manual power, where the old three-second
 timed readiness and B override remain available.
 
 Right trigger controls forward intake power once ready; without a trigger,
@@ -76,14 +76,14 @@ Targets remain defined by the requested percentage, including during faults.
 - [FIRST motor modes and encoders](https://ftc-docs.firstinspires.org/en/latest/tech_tips/tech-tips/tech-tip-motor-modes/tech-tip-motor-modes.html): explains power versus hub velocity control and the importance of motor configuration.
 - [ftc8569 reference shooter](https://github.com/ftc8569/2025-Decode/blob/017bf74fad8a5089da38294f19b21aed42a174b7/TeamCode/src/main/java/org/firstinspires/ftc/teamcode/common/subsystems/Shooter.kt): compares actual and target RPM and clamps software PIDF output. Its readiness comparison uses `> 0.03` despite a less-than comment; BioBuzz uses `<= 0.05` on both motors with dwell. Its robot-specific gains and gearing are not copied.
 - The local Decode shooter uses an LQR in rad/s, with a 28-count assumption in its IO. That controller and calibration do not supply BioBuzz's RPM PID gains.
-- [Kotlin Gradle compatibility](https://kotlinlang.org/docs/gradle-configure-project.html): Kotlin 2.3.21 supports Gradle through 9.3 and AGP through 9.0.
-- [Gradle 9.3.0 release](https://docs.gradle.org/9.3.0/release-notes.html).
+- [Kotlin Gradle compatibility](https://kotlinlang.org/docs/gradle-configure-project.html): Kotlin 2.4.10 supports Gradle through 9.5 and AGP through 9.1.
+- [Gradle 9.5.0 release](https://docs.gradle.org/9.5.0/release-notes.html).
 
 ## Build and Sloth
 
-Build versions: JDK 17, Gradle **9.3.0**, AGP 8.13.2, Kotlin **2.3.21**, NextFTC
+Build versions: JDK 17, Gradle **9.5.0**, AGP 8.13.2, Kotlin **2.4.10**, NextFTC
 1.0.0, FTC SDK 12.0.0, Sloth/Load 0.3.2. The wrapper verifies the official Gradle
-9.3.0 distribution checksum. Kotlin plugin and stdlib versions match. TeamCode compilation and host tests
+9.5.0 distribution checksum. Kotlin plugin and stdlib versions match. TeamCode compilation and host tests
 use a JDK 17 toolchain, even when Gradle is launched with a newer JDK. Generated
 Kotlin project state is ignored by Git. Sloth/Load remain paired at 0.3.2.
 
@@ -110,11 +110,11 @@ No additional robot-side Sloth OpMode is needed.
 
 ## Validation results
 
-All 20 host tests passed with zero failures. Debug and release APK builds,
-Android lint, and the Sloth bundle build passed on this Mac. Lint reports
-dependency-update, bundled SDK native-alignment, and unused-resource warnings,
-with no errors. Robot installation
-and on-hardware tuning have not been performed.
+All 21 host tests passed with zero failures, and the debug APK builds with
+Gradle 9.5.0. The tests include full-power spin-up and shot-dip correction at
+the new 2880 RPM default. BioBuzz TeleOp mirrors its telemetry to Panels and
+the Driver Station. The stronger gains still require physical verification;
+host simulation cannot establish stability on the actual flywheels.
 
 ## Robot verification
 
@@ -125,8 +125,8 @@ and a simulated flywheel under battery sag and ball impact. Host validation
 does not verify encoder wiring, physical gearing, servo travel, or shot accuracy.
 
 1. Confirm motor models, counts/rev, and the shaft corresponding to 4500 RPM.
-2. Full-install the updated APK, initialize TeleOp, and verify PID/66% startup.
-3. With no game pieces, hold right bumper: verify target 2970 RPM, both actual
+2. Full-install the updated APK, initialize TeleOp, and verify PID/64% startup.
+3. With no game pieces, hold right bumper: verify target 2880 RPM, both actual
    RPM readings, and readiness after 150 ms within tolerance. B + trigger must
    not open/feed early. D-pad steps should change the target by 90 RPM.
 4. Fire a shot and verify speed loss closes/stops feeding, then feeding resumes

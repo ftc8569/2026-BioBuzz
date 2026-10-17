@@ -1,15 +1,15 @@
 # BioBuzz shooter setup
 
-Every new TeleOp starts with **velocity PID enabled**, at a **66% preset**.
+Every new TeleOp starts with **velocity PID enabled**, at a **64% preset**.
 The full motor speed is `(3600 / 8) * 10 = 4500 RPM`. In PID, the preset selects
-`target motor RPM = preset * 4500`, so the default target is **2970 RPM**.
+`target motor RPM = preset * 4500`, so the default target is **2880 RPM**.
 PID adjusts actual output power as needed to reach that target.
 
 - Gamepad 1 right bumper: run the shooter at the selected preset.
 - Either gamepad D-pad up/down: change the preset by 2 percentage points, bounded
   to 0–100%. Each step changes the PID target by 90 RPM.
-- Gamepad 1 Y: toggle PID/manual power once per press. Manual uses the same
-  percentage as raw motor power. The next new TeleOp starts in PID again.
+- Gamepad 1 Y: hold to run manual power; release to stop and return to PID.
+  Manual uses the same preset as raw motor power.
 - Gamepad 1 left bumper: reverse the shooter at -0.8, taking priority over right
   bumper. Reverse/release stops automatic feeding and closes the PID blocker.
 - Gamepad 1 right/left trigger: intake forward/reverse. With the shooter running,
@@ -29,7 +29,7 @@ cannot verify actual speed.
 
 ## Motor polarity
 
-Gamepad 1 Y toggles shooter mode. Hive aiming uses gamepad 1 X to save the hive
+Gamepad 1 Y holds manual shooter mode. Hive aiming uses gamepad 1 X to save the hive
 location and gamepad 2 Y to aim; manual right-stick turning cancels aiming.
 
 The shooter pair now uses motor 1 `FORWARD` and motor 2 `REVERSE`

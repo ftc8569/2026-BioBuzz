@@ -36,7 +36,9 @@ Install the full app after this dependency change using
 `./gradlew :TeamCode:installDebug`; a Sloth reload alone cannot install Panels.
 Then connect to the robot Wi-Fi and open <http://192.168.43.1:8001> for a Control
 Hub, or <http://192.168.49.1:8001> for a phone Robot Controller.
-Custom TeleOp telemetry and drawings require calls to the Panels plugin APIs.
+BioBuzz TeleOp sends its telemetry to both the Driver Station and Panels,
+including shooter target RPM, measured RPM, motor power, and feed readiness.
+Custom drawings require calls to the Panels field plugin API.
 
 ## Welcome!
 This GitHub repository contains the source code that is used to build an Android app to control a *FIRST* Tech Challenge competition robot.  To use this SDK, download/clone the entire project to your local computer.

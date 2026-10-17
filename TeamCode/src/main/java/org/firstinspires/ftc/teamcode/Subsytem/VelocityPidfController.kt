@@ -13,8 +13,9 @@ internal class VelocityPidfController {
 
         // Fixed gains across presets: adjusting the RPM target must not change tuning.
         val kF = 1.0 / ShooterSubsystem.MAX_MOTOR_RPM
-        val kP = 0.6 / ShooterSubsystem.MAX_MOTOR_RPM
-        val kI = 0.25 / ShooterSubsystem.MAX_MOTOR_RPM
+        // Strong speed-error correction: full power during spin-up and large shot dips.
+        val kP = 2.0 / ShooterSubsystem.MAX_MOTOR_RPM
+        val kI = 0.75 / ShooterSubsystem.MAX_MOTOR_RPM
         val errorRpm = targetRpm - measuredRpm
         val feedForward = kF * targetRpm
         // D remains zero until encoder noise is measured on the robot.

@@ -4,6 +4,15 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class VelocityPidfControllerTest {
+    @Test fun `64 percent target commands full spinup and strong shot recovery`() {
+        val controller = VelocityPidfController()
+        val target = 2880.0
+        assertEquals(1.0, controller.calculate(target, 0.0, 0.0), 0.0)
+        assertEquals(1.0, controller.calculate(target, target - 900.0, 0.0), 0.0)
+        assertEquals(0.64, controller.calculate(target, target, 0.0), 1e-12)
+        assertEquals(0.24, controller.calculate(target, target + 900.0, 0.0), 1e-12)
+    }
+
     @Test fun `RPM feedforward holds target and corrects speed error in the right direction`() {
         val controller = VelocityPidfController()
         assertEquals(0.66, controller.calculate(2970.0, 2970.0, 0.0), 1e-12)

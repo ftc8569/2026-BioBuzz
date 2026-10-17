@@ -4,7 +4,7 @@ import org.firstinspires.ftc.teamcode.Subsytem.ShooterSubsystem.ControlMode
 
 /** Hold Y for manual shooting; preset adjustments happen once per D-pad press. */
 internal class ShooterControls {
-    private var presetSteps = 33
+    private var presetSteps = 32
     val preset: Double get() = presetSteps * 0.02
     var mode = ControlMode.VELOCITY_PID
         private set
