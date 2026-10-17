@@ -2,8 +2,45 @@ package org.firstinspires.ftc.teamcode.Subsytem
 
 import org.junit.Assert.*
 import org.junit.Test
+import org.junit.After
 
 class VelocityPidfControllerTest {
+    @After fun restoreLiveGains() {
+        ShooterPidfTuning.kP = VelocityPidfController.kP
+        ShooterPidfTuning.kI = VelocityPidfController.kI
+        ShooterPidfTuning.kD = 0.0
+        ShooterPidfTuning.kF = VelocityPidfController.kF
+    }
+
+    @Test fun `Panels gain changes affect an existing controller immediately`() {
+        val controller = VelocityPidfController()
+        assertEquals(0.64, controller.calculate(2880.0, 2880.0, 0.02), 1e-12)
+        ShooterPidfTuning.kP = 0.0
+        ShooterPidfTuning.kI = 0.0
+        ShooterPidfTuning.kF = 0.5 / 4500.0
+        assertEquals(0.32, controller.calculate(2880.0, 2000.0, 0.02), 1e-12)
+    }
+
+    @Test fun `live derivative damps measured acceleration without target kick`() {
+        ShooterPidfTuning.kP = 0.0
+        ShooterPidfTuning.kI = 0.0
+        ShooterPidfTuning.kD = 0.00001
+        val controller = VelocityPidfController()
+        assertEquals(0.64, controller.calculate(2880.0, 2500.0, 0.02), 1e-12)
+        assertEquals(0.59, controller.calculate(2880.0, 2600.0, 0.02), 1e-12)
+        assertEquals(0.66, controller.calculate(2970.0, 2600.0, 0.02), 1e-12)
+        controller.reset()
+        assertEquals(0.64, controller.calculate(2880.0, 2700.0, 0.0), 1e-12)
+    }
+
+    @Test fun `invalid Panels gains fall back to finite defaults`() {
+        ShooterPidfTuning.kP = Double.NaN
+        ShooterPidfTuning.kI = -1.0
+        ShooterPidfTuning.kD = Double.POSITIVE_INFINITY
+        ShooterPidfTuning.kF = Double.NaN
+        assertEquals(0.64, VelocityPidfController().calculate(2880.0, 2880.0, 0.02), 1e-12)
+    }
+
     @Test fun `64 percent target commands full spinup and strong shot recovery`() {
         val controller = VelocityPidfController()
         val target = 2880.0

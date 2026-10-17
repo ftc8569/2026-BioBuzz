@@ -24,6 +24,15 @@ changes, and shots cannot redefine the target by learning a lower speed.
 
 ## Software PIDF
 
+Open Panels at `http://192.168.43.1:8001`, add the **Configurables** widget,
+and expand **ShooterPidfTuning**. Edit `kP`, `kI`, `kD`, or `kF` to apply changes
+to both flywheels on the next control loop. These are raw RPM coefficients:
+defaults are `kP = 2/4500`, `kI = 0.75/4500`, `kD = 0`, `kF = 1/4500`.
+Live edits reset integral and derivative history. Negative or non-finite gains
+fall back to defaults. D acts on measured RPM to avoid target-change kicks.
+Changes are live runtime values; copy tuned values into `ShooterPidfTuning.kt`
+to preserve them across app restarts or code reloads.
+
 Both shooters use `RUN_WITHOUT_ENCODER` and `setPower`; encoder readings remain
 available. The software loop is the only velocity controller. PID is enabled
 by the selected control mode, rather than the SDK hub's `RUN_USING_ENCODER` loop.
@@ -37,14 +46,14 @@ error = T - V
 kF = 1 / 4500
 kP = 2.0 / 4500
 kI = 0.75 / 4500
-output = kF*T + kP*error + integralPower
+output = kF*T + kP*error + integralPower - kD*(V - previousV)/dt
 integralPower += kI*error*dt
 ```
 
 Gains are constant across presets. `dt` is capped at 0.1 seconds, integral power
 is bounded to +/-0.20, and integration freezes when it would worsen output
 saturation. Forward output is clamped to [0, 1]. D remains zero until actual
-encoder noise is measured. These are initial gains, requiring physical tuning;
+encoder noise is measured, unless enabled using Panels. These are initial gains, requiring physical tuning;
 host simulation checks behavior but cannot establish robot-specific gains.
 
 ## Blocker and intake
