@@ -3,6 +3,8 @@ package org.firstinspires.ftc.teamcode.teleop
 import com.bylazar.telemetry.JoinedTelemetry
 import com.bylazar.telemetry.PanelsTelemetry
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp
+import com.pedropathing.math.Pose
+import org.firstinspires.ftc.teamcode.pedro.Constants
 import com.qualcomm.robotcore.hardware.DcMotor
 import dev.nextftc.core.commands.utility.LambdaCommand
 import dev.nextftc.core.components.SubsystemComponent
@@ -16,6 +18,7 @@ import org.firstinspires.ftc.teamcode.Subsytem.ShooterSubsystem
 
 @TeleOp(name = "BioBuzz NextFTC Kotlin TeleOp")
 class BioBuzzTeleOp : NextFTCOpMode() {
+    private lateinit var shootingDriveHold: ShootingDriveHold
     private lateinit var drive: DriveSubsystem
     private lateinit var intake: IntakeSubsystem
     private lateinit var shooter: ShooterSubsystem
@@ -27,11 +30,22 @@ class BioBuzzTeleOp : NextFTCOpMode() {
     private var previousAimButtonPressed = false
     private var blueHiveHeading: Double? = null
     private var rotatingToBlueHive = false
+    private val loopTiming = LoopTiming()
+    private val blockerFeedDelay = BlockerFeedDelay()
+    private val driveIntakeControls = DriveIntakeControls()
     private val shooterControls = ShooterControls()
     private val shooterPreset: Double get() = shooterControls.preset
     private val shooterMode: ShooterSubsystem.ControlMode get() = shooterControls.mode
     private var currentShooterPower = 0.0
     private var currentIntakePower = 0.0
+
+    override fun runOpMode() {
+        try {
+            super.runOpMode()
+        } finally {
+            if (::shooter.isInitialized) shooter.stopVoltagePolling()
+        }
+    }
 
     override fun onInit() {
         telemetry = JoinedTelemetry(telemetry, PanelsTelemetry.ftcTelemetry)
@@ -42,17 +56,21 @@ class BioBuzzTeleOp : NextFTCOpMode() {
         intake = IntakeSubsystem(hardwareMap)
         shooter = ShooterSubsystem(hardwareMap)
         robotLocation = RobotLocationSubsystem(hardwareMap)
+        // Initialize Pedro last so both Pinpoint readers use the Pedro calibration.
+        shootingDriveHold = ShootingDriveHold(Constants.create(hardwareMap))
         addComponents(
             BulkReadComponent,
             SubsystemComponent(drive, intake, shooter, robotLocation)
         )
+        shooter.startVoltagePolling()
     }
 
     override fun onStartButtonPressed() {
+        loopTiming.reset()
         LambdaCommand("Driver control")
             .setIsDone { false }
             .setUpdate { updateDrive() }
-            .setStop { drive.stop() }
+            .setStop { shootingDriveHold.stop(); drive.stop() }
             .requires(drive)
             .schedule()
 
@@ -113,11 +131,15 @@ class BioBuzzTeleOp : NextFTCOpMode() {
                 }
             }
         }
-        drive.drive(
-            -gamepad1.left_stick_y.toDouble(),
-            gamepad1.left_stick_x.toDouble(),
-            turn
-        )
+        val shooting = (gamepad1.right_bumper || gamepad1.y) && !gamepad1.left_bumper
+        if (shooting && !shootingDriveHold.active) {
+            drive.stop()
+            rotatingToBlueHive = false
+        }
+        if (!shootingDriveHold.update(shooting,
+                Pose(location.xInches, location.yInches, location.headingRadians))) {
+            drive.drive(-gamepad1.left_stick_y.toDouble(), gamepad1.left_stick_x.toDouble(), turn)
+        }
         telemetry.addData("Robot X (in)", location.xInches)
         telemetry.addData("Robot Y (in)", location.yInches)
         telemetry.addData("Robot Heading (rad)", location.headingRadians)
@@ -143,6 +165,7 @@ class BioBuzzTeleOp : NextFTCOpMode() {
     }
 
     private fun updateMechanisms() {
+        driveIntakeControls.update(gamepad1.left_stick_button)
         val dpadUp = gamepad1.dpad_up || gamepad2.dpad_up
         val dpadDown = gamepad1.dpad_down || gamepad2.dpad_down
         shooterControls.update(gamepad1.y, dpadUp, dpadDown)
@@ -171,17 +194,24 @@ class BioBuzzTeleOp : NextFTCOpMode() {
             stop = gamepad1.a,
             manualPower = manualIntakePower,
             shooterPower = currentShooterPower,
-            preset = shooterPreset,
+            preset = 1.0,
             mode = shooterMode,
             feedReady = shooter.feedReady,
-            manualBlockerOpen = manualBlockerOpen
+            manualBlockerOpen = manualBlockerOpen,
+            minimumPower = driveIntakeControls.minimumPower(drive.commandedPowerMagnitude)
         )
 
+        currentIntakePower = blockerFeedDelay.apply(currentIntakePower, shooter.blockerOpen)
         intake.setPower(currentIntakePower)
     }
 
     override fun onUpdate() {
+        loopTiming.update()
+        telemetry.addData("Loop interval (ms)", "%.2f", loopTiming.intervalMs)
+        telemetry.addData("Loop frequency (Hz)", "%.1f", loopTiming.frequencyHz)
+        telemetry.addData("Shooting position hold", shootingDriveHold.active)
         telemetry.addData("Intake Power", currentIntakePower)
+        telemetry.addData("Drive intake assist (G1 left-stick click)", driveIntakeControls.enabled)
         telemetry.addData("Shooter flywheel 1 RPM", "%.0f", shooter.measuredRpm1)
         telemetry.addData("Shooter flywheel 2 RPM", "%.0f", shooter.measuredRpm2)
         val selectedPidTarget = shooterControls.pidTargetRpm
@@ -194,7 +224,7 @@ class BioBuzzTeleOp : NextFTCOpMode() {
         telemetry.addData("PID commanded RPM", "%.0f", shooter.targetRpm)
         telemetry.addData("PIDF gains (P/I/D/F)", shooter.pidGainsRead)
         telemetry.addData("PID feedback", "Flywheel 1 RPM (shared motor power)")
-        telemetry.addData("Shooter preset (G1/G2 up/down)", "%.2f", shooterPreset)
+        telemetry.addData("Shooter preset (G1/G2 up/down)", "%.3f", shooterPreset)
         telemetry.addData("Shooter mode (hold G1 Y for manual)", shooterMode)
         telemetry.addData("Shooter speed state", shooter.speedStatus)
         telemetry.addData("D-pad seen (up/down)", "%s / %s", gamepad1.dpad_up || gamepad2.dpad_up, gamepad1.dpad_down || gamepad2.dpad_down)
@@ -223,6 +253,8 @@ class BioBuzzTeleOp : NextFTCOpMode() {
     }
 
     override fun onStop() {
+        shooter.stopVoltagePolling()
+        shootingDriveHold.stop()
         drive.stop()
         intake.setPower(0.0)
         shooter.setManualBlockerOpen(false)

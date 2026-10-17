@@ -32,4 +32,17 @@ class FeedControlsTest {
         assertEquals(0.0, feed(false, manual = 0.7, mode = ControlMode.MANUAL_POWER), 0.0)
         assertEquals(0.66, feed(true, manual = Double.NaN), 0.0)
     }
+    @Test fun `drive minimum raises forward collection without overriding safety or reverse`() {
+        fun moving(manual: Double = 0.0, shooting: Double = 0.0,
+                   stop: Boolean = false, ready: Boolean = false): Double =
+            FeedControls.intakePower(stop, manual, shooting, 0.1,
+                ControlMode.VELOCITY_PID, ready, false, minimumPower = 0.2)
+        assertEquals(0.2, moving(), 0.0)
+        assertEquals(0.2, moving(manual = 0.1), 0.0)
+        assertEquals(0.8, moving(manual = 0.8), 0.0)
+        assertEquals(-0.5, moving(manual = -0.5), 0.0)
+        assertEquals(0.0, moving(stop = true), 0.0)
+        assertEquals(0.0, moving(shooting = 0.7), 0.0)
+        assertEquals(0.2, moving(shooting = 0.7, ready = true), 0.0)
+    }
 }

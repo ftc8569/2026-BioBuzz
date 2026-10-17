@@ -9,10 +9,10 @@ import dev.frozenmilk.sinister.loading.Pinned
 class ShooterPidTuning {
     @Pinned
     companion object {
-        const val DEFAULT_KP = 0.002
-        const val DEFAULT_KI = 0.00007
-        const val DEFAULT_KD = 0.0
-        const val DEFAULT_KF = 0.000212
+        const val DEFAULT_KP = 0.004
+        const val DEFAULT_KI = 0.000000
+        const val DEFAULT_KD = 0.00001
+        const val DEFAULT_KF = 0.000203
 
         // Shared with Panels even when the controller is loaded through Sloth.
         @JvmField @Volatile var kP = DEFAULT_KP

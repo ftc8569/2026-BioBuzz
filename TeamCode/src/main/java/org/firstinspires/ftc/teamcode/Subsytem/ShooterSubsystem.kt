@@ -4,6 +4,7 @@ import com.qualcomm.robotcore.hardware.DcMotor
 import com.qualcomm.robotcore.hardware.DcMotorEx
 import com.qualcomm.robotcore.hardware.DcMotorSimple
 import com.qualcomm.robotcore.hardware.HardwareMap
+import com.qualcomm.robotcore.hardware.VoltageSensor
 import com.qualcomm.robotcore.hardware.Servo
 import dev.nextftc.core.subsystems.Subsystem
 import com.arcrobotics.ftclib.controller.PIDFController
@@ -17,6 +18,7 @@ class ShooterSubsystem(
 
     private val shooter1 = hardwareMap.get(DcMotorEx::class.java, "shooter1")
     private val shooter2 = hardwareMap.get(DcMotorEx::class.java, "shooter2")
+    internal val batteryVoltage = BatteryVoltageMonitor(hardwareMap.getAll(VoltageSensor::class.java))
     private val blocker = hardwareMap.get(Servo::class.java, "blocker")
 
     // Counts per shaft revolution: the confirmed 1:1 goBILDA profile uses 28.
@@ -77,10 +79,11 @@ class ShooterSubsystem(
     companion object {
         // Application reference for preset -> RPM, not the motor's rated 6000 RPM.
         const val MAX_MOTOR_RPM = (3600.0 / 8.0) * 10.0
+        private const val NOMINAL_VOLTAGE = 12.0
         private const val POWER_SPINUP_NANOS = 3_000_000_000L
-        private const val READY_SPEED_FRACTION = 0.05
-        private const val BLOCKER_OPEN = 0.45
-        private const val BLOCKER_CLOSED = 0.24
+        private const val READY_SPEED_FRACTION = 0.01
+        private const val BLOCKER_OPEN = 0.65
+        private const val BLOCKER_CLOSED = 0.78
     }
 
     init {
@@ -96,6 +99,10 @@ class ShooterSubsystem(
         shooter2.power = 0.0
         updateBlocker()
     }
+
+    fun startVoltagePolling() = batteryVoltage.start()
+
+    fun stopVoltagePolling() = batteryVoltage.close()
 
     /** Also sync the mode while idle, so a stale manual override cannot bypass PID. */
     fun setControlMode(mode: ControlMode) {
@@ -124,12 +131,11 @@ class ShooterSubsystem(
         if (mode == ControlMode.MANUAL_POWER) {
             shooter1.mode = DcMotor.RunMode.RUN_WITHOUT_ENCODER
             shooter2.mode = DcMotor.RunMode.RUN_WITHOUT_ENCODER
-            shooter1.power = clipped
-            shooter2.power = clipped
+            applyNormalizedPower(clipped)
             feedReady = now - spinupStartedNanos >= POWER_SPINUP_NANOS
             feedReadiness = if (feedReady) "Timed feed ready - speed unverified"
                 else "Timed spin-up: wait 3 seconds - speed unverified"
-            speedStatus = "Raw power"
+            speedStatus = "Voltage-normalized power"
             updateBlocker()
             return false
         }
@@ -151,9 +157,7 @@ class ShooterSubsystem(
             pid.reset()
             0.0
         }
-        val motorPower = if (output.isFinite()) output.coerceIn(0.0, 1.0) else 0.0
-        shooter1.power = motorPower
-        shooter2.power = motorPower
+        applyNormalizedPower(if (output.isFinite()) output.coerceAtLeast(0.0) else 0.0)
 
         atSpeed = withinTolerance(measuredRpm1)
         // Latch feeding once ready; release, mode/preset changes, or disabled gains reset it.
@@ -175,12 +179,20 @@ class ShooterSubsystem(
         val clipped = if (power.isFinite()) power.coerceIn(-1.0, 0.0) else 0.0
         shooter1.mode = DcMotor.RunMode.RUN_WITHOUT_ENCODER
         shooter2.mode = DcMotor.RunMode.RUN_WITHOUT_ENCODER
-        shooter1.power = clipped
-        shooter2.power = clipped
+        applyNormalizedPower(clipped)
         resetSpeedHold()
         readSpeeds()
         speedStatus = if (clipped < 0.0) "Reversing" else "Off"
         updateBlocker()
+    }
+
+    /** Inputs and PIDF gains express power at 12 V; clamp only after compensation. */
+    private fun applyNormalizedPower(power: Double) {
+        val voltage = batteryVoltage.voltage
+        val normalized = if (power.isFinite())
+            (power * (NOMINAL_VOLTAGE / voltage)).coerceIn(-1.0, 1.0) else 0.0
+        shooter1.power = normalized
+        shooter2.power = normalized
     }
 
     private fun applyPidGains(): Boolean {

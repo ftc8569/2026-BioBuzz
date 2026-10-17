@@ -3,6 +3,7 @@ package org.firstinspires.ftc.teamcode.Subsytem
 import com.qualcomm.robotcore.hardware.DcMotor
 import com.qualcomm.robotcore.hardware.DcMotorEx
 import com.qualcomm.robotcore.hardware.HardwareMap
+import com.qualcomm.robotcore.hardware.VoltageSensor
 import com.qualcomm.robotcore.hardware.Servo
 import com.qualcomm.robotcore.hardware.configuration.annotations.MotorType
 import com.qualcomm.robotcore.hardware.configuration.typecontainers.MotorConfigurationType
@@ -41,10 +42,18 @@ class ShooterSubsystemTest {
         var power1 = 0.0
         var power2 = 0.0
         var now = 0L
+        var voltage = 12.0
+        var otherVoltage = Double.NaN
+        var voltageReads = 0
         val shooter: ShooterSubsystem
 
         init {
             val map = mock(HardwareMap::class.java)
+            val sensor = mock(VoltageSensor::class.java)
+            val otherSensor = mock(VoltageSensor::class.java)
+            `when`(sensor.voltage).thenAnswer { voltageReads++; voltage }
+            `when`(otherSensor.voltage).thenAnswer { voltageReads++; otherVoltage }
+            `when`(map.getAll(VoltageSensor::class.java)).thenReturn(listOf(sensor, otherSensor))
             `when`(map.get(DcMotorEx::class.java, "shooter1")).thenReturn(motor1)
             `when`(map.get(DcMotorEx::class.java, "shooter2")).thenReturn(motor2)
             `when`(map.get(Servo::class.java, "blocker")).thenReturn(blocker)
@@ -68,7 +77,78 @@ class ShooterSubsystemTest {
         // Fixed test target: 0.64 * 4500 = 2880 RPM, independent of the operator preset.
         fun step(ms: Long = 0, power: Double = 0.64, mode: ControlMode = ControlMode.VELOCITY_PID) {
             now += ms * 1_000_000
+            // Publish a sample deterministically; production does this on the poller.
+            shooter.batteryVoltage.pollOnce()
             shooter.updateShot(power, mode)
+        }
+    }
+
+    @Test fun `control loops never read voltage sensors`() {
+        val rig = Rig()
+        repeat(10) {
+            rig.shooter.updateShot(0.5, ControlMode.MANUAL_POWER)
+            rig.shooter.setFlywheelPower(-0.5)
+            rig.shooter.setFlywheelPower(0.0)
+        }
+        assertEquals(0, rig.voltageReads)
+    }
+
+    @Test fun `control uses latest published voltage without polling`() {
+        val rig = Rig()
+        rig.voltage = 10.0
+        rig.shooter.batteryVoltage.pollOnce()
+        val reads = rig.voltageReads
+        rig.voltage = 14.0
+        rig.shooter.updateShot(0.5, ControlMode.MANUAL_POWER)
+        assertEquals(0.6, rig.power1, 1e-9)
+        assertEquals(reads, rig.voltageReads)
+        rig.shooter.batteryVoltage.pollOnce()
+        rig.shooter.updateShot(0.5, ControlMode.MANUAL_POWER)
+        assertEquals(0.5 * 12.0 / 14.0, rig.power1, 1e-9)
+    }
+
+    @Test fun `PID output tracks battery voltage without changing RPM target`() {
+        ShooterPidTuning.kP = 0.0001
+        ShooterPidTuning.kI = 0.0
+        val rig = Rig()
+        for (voltage in listOf(12.0, 10.0, 14.0)) {
+            rig.voltage = voltage
+            rig.step(20)
+            assertEquals(0.288 * 12.0 / voltage, rig.power1, 1e-9)
+            assertEquals(rig.power1, rig.power2, 0.0)
+            assertEquals(2880.0, rig.shooter.targetRpm, 1e-9)
+        }
+    }
+
+    @Test fun `manual and reverse power are normalized and saturated`() {
+        val rig = Rig()
+        rig.voltage = 10.0
+        rig.step(power = 0.5, mode = ControlMode.MANUAL_POWER)
+        assertEquals(0.6, rig.power1, 1e-9)
+        assertEquals(0.6, rig.power2, 1e-9)
+        rig.shooter.setFlywheelPower(-0.5)
+        assertEquals(-0.6, rig.power1, 1e-9)
+        assertEquals(-0.6, rig.power2, 1e-9)
+        rig.step(power = 1.0, mode = ControlMode.MANUAL_POWER)
+        assertEquals(1.0, rig.power1, 0.0)
+        rig.shooter.setFlywheelPower(-1.0)
+        assertEquals(-1.0, rig.power1, 0.0)
+        rig.shooter.setFlywheelPower(0.0)
+        assertEquals(0.0, rig.power1, 0.0)
+    }
+
+    @Test fun `lowest valid sensor is used and invalid readings fall back to nominal`() {
+        val rig = Rig()
+        rig.voltage = 14.0
+        rig.otherVoltage = 10.0
+        rig.step(power = 0.5, mode = ControlMode.MANUAL_POWER)
+        assertEquals(0.6, rig.power1, 1e-9)
+        for (invalid in listOf(0.0, -1.0, Double.NaN, Double.POSITIVE_INFINITY)) {
+            rig.voltage = invalid
+            rig.otherVoltage = invalid
+            rig.step(power = 0.5, mode = ControlMode.MANUAL_POWER)
+            assertEquals(0.5, rig.power1, 0.0)
+            assertEquals(0.5, rig.power2, 0.0)
         }
     }
 
