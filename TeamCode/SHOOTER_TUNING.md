@@ -5,18 +5,20 @@
 The shooter now starts in PID at 64%. It uses the supplied full-speed calculation:
 
 ```text
-maximum motor RPM = (3600 / 8) * 10 = 4500
+preset reference RPM = (3600 / 8) * 10 = 4500
 RPM target = selected fraction * 4500
 64% -> 2880 RPM; 66% -> 2970 RPM; 100% -> 4500 RPM
 measured RPM = abs(DcMotorEx.getVelocity()) * 60 / motorType.ticksPerRev
 ```
 
-Both motors have the same RPM target, but each converts its own encoder reading
-using its own motor profile. The configured achievable maximum is displayed for
-diagnostics and does not cap this software target. Correct motor configuration
-is required: ticks/rev and 4500 RPM must refer to the same shaft. There is no
-assumed encoder count or flywheel transmission multiplier. Motor model and
-physical calibration still require confirmation on the robot.
+Both motors have the same RPM target. The confirmed goBILDA 1:1 gearbox uses
+28 encoder counts per output revolution, selected through the custom
+`BioBuzzShooter1To1` motor type in the robot configuration. This replaces the
+SDK generic goBILDA profile (99.5:1, 2786 counts/revolution), which made RPM
+readings 99.5 times too small. The motor profile uses its rated 6000 RPM;
+4500 RPM remains the application reference for preset scaling and PIDF gains.
+
+Verified against the [goBILDA 1:1 specifications](https://www.gobilda.com/5202-series-yellow-jacket-motor-1-1-ratio-24mm-length-6mm-d-shaft-6000-rpm-3-3-5v-encoder/).
 
 The previous spin-up capture and saved measured targets have been removed.
 Changing the preset changes RPM immediately. Battery sag, bumper release, mode
@@ -119,7 +121,7 @@ No additional robot-side Sloth OpMode is needed.
 
 ## Validation results
 
-All 21 host tests passed with zero failures, and the debug APK builds with
+All 25 host tests passed with zero failures, and the debug APK builds with
 Gradle 9.5.0. The tests include full-power spin-up and shot-dip correction at
 the new 2880 RPM default. BioBuzz TeleOp mirrors its telemetry to Panels and
 the Driver Station. The stronger gains still require physical verification;

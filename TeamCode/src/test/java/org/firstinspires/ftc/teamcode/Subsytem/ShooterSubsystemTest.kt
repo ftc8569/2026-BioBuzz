@@ -11,8 +11,26 @@ import org.junit.Assert.*
 import org.junit.Test
 import org.mockito.ArgumentMatchers.anyDouble
 import org.mockito.Mockito.*
+import com.qualcomm.robotcore.hardware.configuration.annotations.MotorType
+import org.firstinspires.ftc.teamcode.hardware.BioBuzzShooterMotor
 
 class ShooterSubsystemTest {
+    @Test fun `one to one shooter profile converts encoder speed without 99 point 5 reduction`() {
+        val profile = BioBuzzShooterMotor::class.java.getAnnotation(MotorType::class.java)!!
+        assertEquals(28.0, profile.ticksPerRev, 0.0)
+        assertEquals(1.0, profile.gearing, 0.0)
+        val rig = Rig(profile.ticksPerRev, profile.ticksPerRev)
+        // This raw speed displayed as 50 RPM under the old 2786-tick profile.
+        rig.speed1 = 50.0 * 2786.0 / 60.0
+        rig.speed2 = -rig.speed1
+        rig.step(0, power = 0.64)
+        assertEquals(4975.0, rig.shooter.measuredRpm1, 1e-9)
+        assertEquals(4975.0, rig.shooter.measuredRpm2, 1e-9)
+        assertEquals(2880.0, rig.shooter.targetRpm, 1e-9)
+        assertEquals(1344.0, rig.shooter.targetTicksPerSecond1, 1e-9)
+        assertEquals(1344.0, rig.shooter.targetTicksPerSecond2, 1e-9)
+    }
+
     private class Rig(cpr1: Double = 28.0, cpr2: Double = 28.0) {
         val motor1 = mock(DcMotorEx::class.java)
         val motor2 = mock(DcMotorEx::class.java)

@@ -198,7 +198,7 @@ class BioBuzzTeleOp : NextFTCOpMode() {
         telemetry.addData("Encoder feedback unavailable", shooter.encoderFault)
         telemetry.addData("Blocker status", shooter.blockerStatus)
         telemetry.addData("Blocker commanded position", "%.2f", shooter.blockerCommandedPosition)
-        telemetry.addData("Full motor speed RPM", "%.0f", ShooterSubsystem.MAX_MOTOR_RPM)
+        telemetry.addData("Shooter preset reference RPM", "%.0f", ShooterSubsystem.MAX_MOTOR_RPM)
         telemetry.addData("PID target RPM", "%.0f", shooter.targetRpm)
         telemetry.addData("RPM configuration valid", shooter.rpmConfigurationValid)
         telemetry.addData("Raw ticks/s 1 / 2", "%.0f / %.0f",

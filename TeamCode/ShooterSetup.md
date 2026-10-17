@@ -1,7 +1,7 @@
 # BioBuzz shooter setup
 
 Every new TeleOp starts with **velocity PID enabled**, at a **64% preset**.
-The full motor speed is `(3600 / 8) * 10 = 4500 RPM`. In PID, the preset selects
+The preset reference speed is `(3600 / 8) * 10 = 4500 RPM`. In PID, the preset selects
 `target motor RPM = preset * 4500`, so the default target is **2880 RPM**.
 PID adjusts actual output power as needed to reach that target.
 
@@ -43,19 +43,20 @@ same. Shooter Motor Diagnostic uses the same updated directions.
 ## Encoder configuration
 
 The motor names are `shooter1`, `shooter2`, `intake1`, `intake2`, and `blocker`.
-Connect both power and encoder cables to matching hub ports. Select the actual
-shooter motor models in the Robot Controller configuration. Each configured
-`ticksPerRev` must describe the shaft whose full speed is 4500 RPM:
+Connect both power and encoder cables to matching hub ports. Both shooters use
+the confirmed goBILDA 1:1 gearbox: **28 encoder counts per output revolution**,
+with the custom **BioBuzz shooter goBILDA 1:1** motor type. The active configuration
+and `robot-configs/BioBuzz.xml` select this type for shooter1 and shooter2.
 
 ```text
-measured motor RPM = abs(encoder ticks per second) * 60 / encoder ticks per revolution
+measured motor RPM = abs(encoder ticks per second) * 60 / 28
+PID target RPM = preset * 4500; default 0.64 -> 2880 RPM
 ```
 
-The code uses each motor's own configured counts, with no assumed 28-count
-encoder or borrowed gearing. If 4500 RPM describes a different shaft from the
-configured motor output, adjust the encoder calibration/transmission before
-using the RPM reading. A positive but incorrect motor profile cannot be detected
-automatically. Invalid/zero counts stop PID motors and block feeding.
+The generic SDK goBILDA profile describes a 99.5:1 gearbox and 2786 counts per
+revolution. That profile incorrectly displayed about 50 RPM for an actual
+4975 RPM on the 1:1 shooter. The 4500 RPM preset reference remains separate from
+the 1:1 motor profile's rated 6000 RPM.
 
 A missing encoder blocks PID feeding and holds bounded preset power while
 waiting for feedback. Valid readings restore PID automatically; there is no

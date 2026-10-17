@@ -4,8 +4,8 @@
         <LynxModule name="Expansion Hub 1" port="1">
             <goBILDA5202SeriesMotor name="intake1" port="0" />
             <goBILDA5202SeriesMotor name="intake2" port="1" />
-            <goBILDA5202SeriesMotor name="shooter1" port="2" />
-            <goBILDA5202SeriesMotor name="shooter2" port="3" />
+            <BioBuzzShooter1To1 name="shooter1" port="2" />
+            <BioBuzzShooter1To1 name="shooter2" port="3" />
             <goBILDAPinpoint name="pinpoint" port="0" bus="0" />
         </LynxModule>
         <LynxModule name="Control Hub" port="173">

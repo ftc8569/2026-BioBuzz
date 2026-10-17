@@ -18,7 +18,7 @@ class ShooterSubsystem(
     private val shooter2 = hardwareMap.get(DcMotorEx::class.java, "shooter2")
     private val blocker = hardwareMap.get(Servo::class.java, "blocker")
 
-    // These must describe encoder counts per revolution of the 4500-RPM shaft.
+    // Counts per shaft revolution: the confirmed 1:1 goBILDA profile uses 28.
     val configuredTicksPerRev1 = shooter1.motorType.ticksPerRev
     val configuredTicksPerRev2 = shooter2.motorType.ticksPerRev
     val configuredMaxTicksPerSecond1 = shooter1.motorType.achieveableMaxTicksPerSecond
@@ -75,6 +75,7 @@ class ShooterSubsystem(
     private val controller2 = VelocityPidfController()
 
     companion object {
+        // Application reference for preset -> RPM, not the motor's rated 6000 RPM.
         const val MAX_MOTOR_RPM = (3600.0 / 8.0) * 10.0
         private const val ENCODER_CHECK_NANOS = 3_000_000_000L
         private const val POWER_SPINUP_NANOS = 3_000_000_000L
