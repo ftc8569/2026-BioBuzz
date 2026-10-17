@@ -48,9 +48,16 @@ class ShooterSubsystem(
         private set
     var encoderPosition2 = 0
         private set
-    val flywheelPower1: Double get() = shooter1.power
-    val flywheelPower2: Double get() = shooter2.power
-    val blockerCommandedPosition: Double get() = blocker.position
+    var flywheelPower1 = 0.0
+        private set
+    var flywheelPower2 = 0.0
+        private set
+    var blockerCommandedPosition = BLOCKER_CLOSED
+        private set
+    var pidIntervalMs = 0.0
+        private set
+    val pidFrequencyHz: Double get() = if (pidIntervalMs > 0.0) 1000.0 / pidIntervalMs else 0.0
+    private var previousPidUpdateNanos = -1L
     var blockerOpen = false
         private set
     var blockerStatus = "Shooter off"
@@ -74,7 +81,8 @@ class ShooterSubsystem(
     private var appliedI = Double.NaN
     private var appliedD = Double.NaN
     private var appliedF = Double.NaN
-    val pidGainsRead: String get() = "$appliedP / $appliedI / $appliedD / $appliedF"
+    var pidGainsRead = "NaN / NaN / NaN / NaN"
+        private set
 
     companion object {
         // Application reference for preset -> RPM, not the motor's rated 6000 RPM.
@@ -129,8 +137,6 @@ class ShooterSubsystem(
         if (spinupStartedNanos == -1L) spinupStartedNanos = now
 
         if (mode == ControlMode.MANUAL_POWER) {
-            shooter1.mode = DcMotor.RunMode.RUN_WITHOUT_ENCODER
-            shooter2.mode = DcMotor.RunMode.RUN_WITHOUT_ENCODER
             applyNormalizedPower(clipped)
             feedReady = now - spinupStartedNanos >= POWER_SPINUP_NANOS
             feedReadiness = if (feedReady) "Timed feed ready - speed unverified"
@@ -140,6 +146,9 @@ class ShooterSubsystem(
             return false
         }
 
+        pidIntervalMs = if (previousPidUpdateNanos >= 0L)
+            (now - previousPidUpdateNanos).coerceAtLeast(0L) / 1_000_000.0 else 0.0
+        previousPidUpdateNanos = now
         targetRpm = clipped * MAX_MOTOR_RPM
         if (!applyPidGains()) {
             pid.reset()
@@ -177,8 +186,6 @@ class ShooterSubsystem(
 
     fun setFlywheelPower(power: Double) {
         val clipped = if (power.isFinite()) power.coerceIn(-1.0, 0.0) else 0.0
-        shooter1.mode = DcMotor.RunMode.RUN_WITHOUT_ENCODER
-        shooter2.mode = DcMotor.RunMode.RUN_WITHOUT_ENCODER
         applyNormalizedPower(clipped)
         resetSpeedHold()
         readSpeeds()
@@ -191,8 +198,7 @@ class ShooterSubsystem(
         val voltage = batteryVoltage.voltage
         val normalized = if (power.isFinite())
             (power * (NOMINAL_VOLTAGE / voltage)).coerceIn(-1.0, 1.0) else 0.0
-        shooter1.power = normalized
-        shooter2.power = normalized
+        writeFlywheelPower(normalized)
     }
 
     private fun applyPidGains(): Boolean {
@@ -213,15 +219,19 @@ class ShooterSubsystem(
             appliedI = i
             appliedD = d
             appliedF = f
+            pidGainsRead = "$p / $i / $d / $f"
         }
         return p > 0 || i > 0 || d > 0 || f > 0
     }
 
-    private fun stopFlywheels() {
-        shooter1.mode = DcMotor.RunMode.RUN_WITHOUT_ENCODER
-        shooter2.mode = DcMotor.RunMode.RUN_WITHOUT_ENCODER
-        shooter1.power = 0.0
-        shooter2.power = 0.0
+    private fun stopFlywheels() = writeFlywheelPower(0.0)
+
+    /** Cache commanded outputs for telemetry; don't read hardware back to display commands. */
+    private fun writeFlywheelPower(power: Double) {
+        shooter1.power = power
+        shooter2.power = power
+        flywheelPower1 = power
+        flywheelPower2 = power
     }
 
     private fun readSpeeds() {
@@ -240,6 +250,8 @@ class ShooterSubsystem(
             abs(measuredRpm - targetRpm) <= targetRpm * READY_SPEED_FRACTION
 
     private fun resetSpeedHold() {
+        previousPidUpdateNanos = -1L
+        pidIntervalMs = 0.0
         requestedPower = 0.0
         spinupStartedNanos = -1L
         targetRpm = 0.0
@@ -258,6 +270,7 @@ class ShooterSubsystem(
             manualBlockerOpen -> "Manual override disabled in PID"
             else -> "Shooter off"
         }
-        blocker.position = if (blockerOpen) BLOCKER_OPEN else BLOCKER_CLOSED
+        blockerCommandedPosition = if (blockerOpen) BLOCKER_OPEN else BLOCKER_CLOSED
+        blocker.position = blockerCommandedPosition
     }
 }

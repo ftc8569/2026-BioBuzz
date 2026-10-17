@@ -3,6 +3,7 @@ package org.firstinspires.ftc.teamcode.autos
 import com.pedropathing.follower.Follower
 import com.pedropathing.math.Pose
 import com.pedropathing.paths.Path
+import com.qualcomm.hardware.lynx.LynxModule
 import com.qualcomm.robotcore.hardware.DcMotorEx
 import com.qualcomm.robotcore.hardware.HardwareMap
 import com.qualcomm.robotcore.hardware.Servo
@@ -12,13 +13,23 @@ import org.firstinspires.ftc.teamcode.Subsytem.ShooterPidTuning
 import org.firstinspires.ftc.teamcode.pedro.Constants
 import org.junit.Assert.*
 import org.junit.Test
+import kotlin.math.abs
+import org.mockito.ArgumentMatchers.doubleThat
 import org.mockito.ArgumentCaptor
 import org.mockito.Mockito.*
 
 class BioBuzzAutoTest {
-    @Test fun `shoots for two seconds after readiness before and after the four paths`() {
+    @Test fun `basicred shoots for two seconds after readiness then follows its path once and stops`() =
+        verifyBasicAuto(blue = false)
+
+    @Test fun `basicblue uses the same speed and timing then follows its exported path once and stops`() =
+        verifyBasicAuto(blue = true)
+
+    private fun verifyBasicAuto(blue: Boolean) {
         val follower = mock(Follower::class.java)
         val map = mock(HardwareMap::class.java)
+        val hub = mock(LynxModule::class.java)
+        `when`(map.getAll(LynxModule::class.java)).thenReturn(listOf(hub))
         val motors = listOf("shooter1", "shooter2", "intake1", "intake2")
             .associateWith { mock(DcMotorEx::class.java) }
         val blocker = mock(Servo::class.java)
@@ -32,7 +43,12 @@ class BioBuzzAutoTest {
         `when`(follower.pose()).thenReturn(Pose(0.0, 0.0, 0.0))
         `when`(follower.isBusy).thenReturn(true)
         var now = 0L
-        val auto = BioBuzzAuto { now }
+        val auto = if (blue) BasicBlueAuto { now } else BioBuzzAuto { now }
+        val startX = if (blue) 83.07841726618705 else 57.01798561151079
+        val startY = if (blue) 132.19424460431654 else 9.221582733812928
+        val endX = if (blue) 132.9597122302158 else 8.96906474820144
+        val endY = if (blue) 41.497122302158274 else 97.8935251798561
+        val pathHeading = Math.toRadians(if (blue) 90.0 else 270.0)
         auto.hardwareMap = map
         auto.telemetry = mock(Telemetry::class.java)
         val gains = doubleArrayOf(ShooterPidTuning.kP, ShooterPidTuning.kI,
@@ -46,20 +62,24 @@ class BioBuzzAutoTest {
                 constants.`when`<Follower> { Constants.create(map) }.thenReturn(follower)
                 auto.init()
             }
+            verify(hub).bulkCachingMode = LynxModule.BulkCachingMode.MANUAL
             val initialPose = ArgumentCaptor.forClass(Pose::class.java)
             verify(follower).setPose(initialPose.capture())
-            assertEquals(56.0, initialPose.value.x(), 1e-9)
-            assertEquals(11.461151079136723, initialPose.value.y(), 1e-9)
+            assertEquals(startX, initialPose.value.x(), 1e-9)
+            assertEquals(startY, initialPose.value.y(), 1e-9)
             assertEquals(Math.PI / 2, initialPose.value.heading(), 1e-9)
             auto.start()
             auto.loop() // Spin up while stationary: the two-second timer has not started.
             now = 10_000_000_000L
             auto.loop()
             verify(follower, never()).follow(any(Path::class.java))
-            verify(motors.getValue("intake1"), never()).power = 0.70
-            `when`(motors.getValue("shooter1").velocity).thenReturn(3150.0 * 28 / 60)
+            // P-only test gains expose the exact 0.695 * 4500 RPM target as power.
+            for (name in listOf("shooter1", "shooter2"))
+                verify(motors.getValue(name), atLeastOnce()).power = doubleThat { abs(it - 0.31275) < 1e-9 }
+            verify(motors.getValue("intake1"), never()).power = 0.695
+            `when`(motors.getValue("shooter1").velocity).thenReturn(3127.5 * 28 / 60)
             auto.loop() // RPM 1 reaches target; begin the full two seconds of feeding.
-            verify(motors.getValue("intake1")).power = 0.70
+            verify(motors.getValue("intake1")).power = 0.695
             `when`(motors.getValue("shooter1").velocity).thenReturn(0.0)
             now += 1_999_000_000L
             auto.loop() // An RPM dip does not reset feeding or start driving early.
@@ -67,76 +87,29 @@ class BioBuzzAutoTest {
             now += 1_000_000L
             auto.loop() // Exactly two seconds: stop shooting and start path 1.
             verify(follower).follow(any(Path::class.java))
-            clearInvocations(*motors.values.toTypedArray(), blocker)
-            auto.loop() // Path 1: no collecting or shooting.
-            verify(motors.getValue("intake1"), never()).power = 1.0
-            verify(motors.getValue("shooter1"), never()).power = 0.315
-
-            `when`(follower.isBusy).thenReturn(false)
-            auto.loop() // Enter path 2: intake starts in the same loop.
-            `when`(follower.isBusy).thenReturn(true)
-            repeat(3) {
-                clearInvocations(*motors.values.toTypedArray())
-                auto.loop()
-                for (name in listOf("intake1", "intake2"))
-                    verify(motors.getValue(name)).power = 1.0
-                for (name in listOf("shooter1", "shooter2"))
-                    verify(motors.getValue(name)).power = 0.0
-            }
-            `when`(follower.isBusy).thenReturn(false)
-            for (stage in 3..4) {
-                clearInvocations(*motors.values.toTypedArray())
-                auto.loop()
-                for (motor in motors.values) verify(motor).power = 0.0
-            }
-            auto.loop() // Finish path 4: start shooting, wait to feed.
-            for (name in listOf("shooter1", "shooter2"))
-                verify(motors.getValue(name)).power = 0.315
-            verify(follower).hold(any(Pose::class.java))
             val followed = ArgumentCaptor.forClass(Path::class.java)
-            verify(follower, times(4)).follow(followed.capture())
-            val ends = listOf(
-                doubleArrayOf(43.580575539568336, 9.1251798561151, 180.0),
-                doubleArrayOf(13.01654676258992, 7.334532374100731, 180.0),
-                doubleArrayOf(12.999280575539576, 14.346762589928069, 270.0),
-                doubleArrayOf(57.44892086330934, 9.968345323740998, 270.0))
-            for ((path, end) in followed.allValues.zip(ends)) {
-                assertEquals(end[0], path.endPose().x(), 1e-9)
-                assertEquals(end[1], path.endPose().y(), 1e-9)
-                assertEquals(Math.toRadians(end[2]), path.endPose().heading(), 1e-9)
-            }
-            // Check each heading range, including the exported 90-degree initial pose
-            // followed by path 1's independent 270 -> 180-degree interpolation.
-            val starts = listOf(270.0, 180.0, 180.0, 270.0)
-            for ((index, path) in followed.allValues.withIndex()) {
-                assertEquals(Math.toRadians(starts[index]), path.heading(0.0), 1e-9)
-                assertEquals(Math.toRadians((starts[index] + ends[index][2]) / 2),
-                    path.heading(0.5), 1e-9)
-            }
-            // Final shot has its own timer and must wait for a fresh threshold.
-            now += 10_000_000_000L
-            auto.loop()
-            verify(motors.getValue("intake1"), never()).power = 0.70
-            // RPM 2 remains zero: only RPM 1 opens the gate, and feeding stays latched.
-            `when`(motors.getValue("shooter1").velocity).thenReturn(3150.0 * 28 / 60)
-            auto.loop()
-            verify(blocker).position = 0.65
-            `when`(motors.getValue("shooter1").velocity).thenReturn(0.0)
-            clearInvocations(*motors.values.toTypedArray())
-            auto.loop()
-            for (name in listOf("intake1", "intake2"))
-                verify(motors.getValue(name)).power = 0.70
+            verify(follower).follow(followed.capture())
+            val path = followed.value
+            assertEquals(startX, path.get(0.0).x(), 1e-9)
+            assertEquals(startY, path.get(0.0).y(), 1e-9)
+            assertEquals(endX, path.endPose().x(), 1e-9)
+            assertEquals(endY, path.endPose().y(), 1e-9)
+            for (t in listOf(0.0, 0.5, 1.0))
+                assertEquals(pathHeading, path.heading(t), 1e-9)
+            // During the entire path the mechanisms stay off; no second shot is started.
             clearInvocations(*motors.values.toTypedArray(), blocker)
-            now += 1_999_000_000L
+            repeat(3) { now += 1_000_000_000L; auto.loop() }
+            verifyNoInteractions(*motors.values.toTypedArray(), blocker)
+            verify(follower, times(1)).follow(any(Path::class.java))
+            clearInvocations(follower)
+            `when`(follower.isBusy).thenReturn(false)
             auto.loop()
-            for (name in listOf("intake1", "intake2"))
-                verify(motors.getValue(name)).power = 0.70
-            clearInvocations(*motors.values.toTypedArray(), blocker, follower)
-            now += 1_000_000L
-            auto.loop() // The final two seconds finish; all outputs stop automatically.
             for (motor in motors.values) verify(motor).power = 0.0
             verify(blocker, atLeastOnce()).position = 0.78
             verify(follower).stop()
+            verify(hub, atLeastOnce()).clearBulkCache()
+            verify(hub).bulkCachingMode = LynxModule.BulkCachingMode.AUTO
+            verify(follower, never()).follow(any(Path::class.java))
             clearInvocations(*motors.values.toTypedArray(), follower)
             auto.loop() // Completion cannot restart shooting or the path.
             verifyNoInteractions(*motors.values.toTypedArray(), follower)

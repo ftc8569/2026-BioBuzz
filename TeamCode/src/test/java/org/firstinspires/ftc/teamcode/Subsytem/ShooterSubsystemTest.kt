@@ -83,6 +83,34 @@ class ShooterSubsystemTest {
         }
     }
 
+    @Test fun `100 Hz PID ticks use fresh feedback without repeated mode or telemetry reads`() {
+        ShooterPidTuning.kP = 0.0001
+        ShooterPidTuning.kI = 0.0
+        val rig = Rig()
+        clearInvocations(rig.motor1, rig.motor2, rig.blocker)
+        repeat(100) { index ->
+            rig.rpm(1000.0 + index, 0.0)
+            rig.step(10)
+            val expected = (2880.0 - 1000.0 - index) * 0.0001
+            assertEquals(expected, rig.power1, 1e-9)
+            assertEquals(expected, rig.power2, 1e-9)
+            assertEquals(expected, rig.shooter.flywheelPower1, 1e-9)
+            assertEquals(expected, rig.shooter.flywheelPower2, 1e-9)
+            assertEquals(0.78, rig.shooter.blockerCommandedPosition, 0.0)
+            if (index > 0) assertEquals(100.0, rig.shooter.pidFrequencyHz, 1e-9)
+        }
+        for (motor in listOf(rig.motor1, rig.motor2)) {
+            verify(motor, times(100)).velocity
+            verify(motor, times(100)).currentPosition
+            verify(motor, never()).setMode(any(DcMotor.RunMode::class.java))
+            verify(motor, never()).power
+        }
+        verify(rig.blocker, never()).position
+        rig.shooter.setFlywheelPower(0.0)
+        assertEquals(0.0, rig.shooter.pidFrequencyHz, 0.0)
+        assertEquals(0.0, rig.shooter.flywheelPower1, 0.0)
+    }
+
     @Test fun `control loops never read voltage sensors`() {
         val rig = Rig()
         repeat(10) {

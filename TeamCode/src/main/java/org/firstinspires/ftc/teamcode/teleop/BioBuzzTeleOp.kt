@@ -24,7 +24,12 @@ class BioBuzzTeleOp : NextFTCOpMode() {
     private lateinit var shooter: ShooterSubsystem
     private lateinit var robotLocation: RobotLocationSubsystem
     private lateinit var driveMotors: List<DcMotor>
-    private var previousDriveEncoderPositions: IntArray? = null
+    private val previousDriveEncoderPositions = IntArray(4)
+    private val driveEncoderDeltas = IntArray(4)
+    private var haveEncoderBaseline = false
+    private var latestLocation = FieldLocation(0.0, 0.0, 0.0)
+    private var latestHeadingError: Double? = null
+    private val telemetryRefresh = TelemetryRefresh()
     private var locationInitialized = false
     private var previousXButtonPressed = false
     private var previousAimButtonPressed = false
@@ -67,6 +72,7 @@ class BioBuzzTeleOp : NextFTCOpMode() {
 
     override fun onStartButtonPressed() {
         loopTiming.reset()
+        telemetryRefresh.reset()
         LambdaCommand("Driver control")
             .setIsDone { false }
             .setUpdate { updateDrive() }
@@ -91,13 +97,15 @@ class BioBuzzTeleOp : NextFTCOpMode() {
             robotLocation.setStartingLocation(FieldLocation(0.0, 0.0, 0.0))
             locationInitialized = true
         }
-        val positions = driveMotors.map { it.currentPosition }.toIntArray()
-        val previousPositions = previousDriveEncoderPositions ?: positions
-        telemetry.addData("Drive encoder delta (ticks)", "FL %d, FR %d, BL %d, BR %d",
-            positions[0] - previousPositions[0], positions[1] - previousPositions[1],
-            positions[2] - previousPositions[2], positions[3] - previousPositions[3])
-        previousDriveEncoderPositions = positions
+        for (index in driveMotors.indices) {
+            val position = driveMotors[index].currentPosition
+            driveEncoderDeltas[index] = if (haveEncoderBaseline)
+                position - previousDriveEncoderPositions[index] else 0
+            previousDriveEncoderPositions[index] = position
+        }
+        haveEncoderBaseline = true
         val location = robotLocation.getLocation()
+        latestLocation = location
         if (gamepad1.x && !previousXButtonPressed) {
             robotLocation.updateHiveLocation()
             blueHiveHeading = null
@@ -140,14 +148,7 @@ class BioBuzzTeleOp : NextFTCOpMode() {
                 Pose(location.xInches, location.yInches, location.headingRadians))) {
             drive.drive(-gamepad1.left_stick_y.toDouble(), gamepad1.left_stick_x.toDouble(), turn)
         }
-        telemetry.addData("Robot X (in)", location.xInches)
-        telemetry.addData("Robot Y (in)", location.yInches)
-        telemetry.addData("Robot Heading (rad)", location.headingRadians)
-        telemetry.addData("Blue Hive Heading (rad)",
-            blueHiveHeading ?: "Press G1 X to save hive, then G2 Y to aim")
-        telemetry.addData("Turning to Blue Hive",
-            if (rotatingToBlueHive) "Yes (right stick cancels)" else "No")
-        headingError?.let { telemetry.addData("Heading Error (rad)", it) }
+        latestHeadingError = headingError
     }
 
     private fun wrapAngle(angle: Double): Double {
@@ -207,6 +208,19 @@ class BioBuzzTeleOp : NextFTCOpMode() {
 
     override fun onUpdate() {
         loopTiming.update()
+        if (!telemetryRefresh.isDue()) return
+        telemetry.addData("Drive encoder delta (ticks)", "FL %d, FR %d, BL %d, BR %d",
+            driveEncoderDeltas[0], driveEncoderDeltas[1], driveEncoderDeltas[2], driveEncoderDeltas[3])
+        telemetry.addData("Robot X (in)", latestLocation.xInches)
+        telemetry.addData("Robot Y (in)", latestLocation.yInches)
+        telemetry.addData("Robot Heading (rad)", latestLocation.headingRadians)
+        telemetry.addData("Blue Hive Heading (rad)",
+            blueHiveHeading ?: "Press G1 X to save hive, then G2 Y to aim")
+        telemetry.addData("Turning to Blue Hive",
+            if (rotatingToBlueHive) "Yes (right stick cancels)" else "No")
+        latestHeadingError?.let { telemetry.addData("Heading Error (rad)", it) }
+        telemetry.addData("PID interval (ms)", "%.2f", shooter.pidIntervalMs)
+        telemetry.addData("PID frequency (Hz)", "%.1f", shooter.pidFrequencyHz)
         telemetry.addData("Loop interval (ms)", "%.2f", loopTiming.intervalMs)
         telemetry.addData("Loop frequency (Hz)", "%.1f", loopTiming.frequencyHz)
         telemetry.addData("Shooting position hold", shootingDriveHold.active)
