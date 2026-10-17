@@ -12,7 +12,7 @@ import org.firstinspires.ftc.teamcode.Subsytem.IntakeSubsystem;
 import org.firstinspires.ftc.teamcode.Subsytem.ShooterSubsystem;
 import org.firstinspires.ftc.teamcode.pedro.Constants;
 
-/** Four segments from pedro paths/Left Lane Pickup.pp, then shoot until STOP. */
+/** Four segments from pedro paths/redleftpickup.pp, then shoot until STOP. */
 @Autonomous(name = "BioBuzz Auto")
 public class BioBuzzAuto extends OpMode {
     private static final double SHOOTER_PRESET = 0.70;
@@ -29,11 +29,12 @@ public class BioBuzzAuto extends OpMode {
         PoseFactory p = PoseFactory.degrees();
         Pose start = p.of(55.99999999999999, 11.461151079136723, 90);
         Pose end1 = p.of(43.580575539568336, 9.1251798561151, 180);
-        Pose end2 = p.of(9.351798561151071, 7.334532374100731, 180);
+        Pose end2 = p.of(13.01654676258992, 7.334532374100731, 180);
         Pose end3 = p.of(12.999280575539576, 14.346762589928069, 270);
         Pose end4 = p.of(57.44892086330934, 9.968345323740998, 270);
         paths = new Path[] {
-                Paths.line(start, end1).linear(start, end1),
+                // The export starts localization at 90 degrees but path 1 heading at 270.
+                Paths.line(start, end1).linear(Math.toRadians(270), Math.toRadians(180)),
                 Paths.line(end1, end2).linear(end1, end2),
                 Paths.line(end2, end3).linear(end2, end3),
                 Paths.line(end3, end4).linear(end3, end4)

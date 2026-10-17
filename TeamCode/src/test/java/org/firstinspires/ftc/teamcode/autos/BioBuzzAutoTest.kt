@@ -80,13 +80,21 @@ class BioBuzzAutoTest {
             verify(follower, times(4)).follow(followed.capture())
             val ends = listOf(
                 doubleArrayOf(43.580575539568336, 9.1251798561151, 180.0),
-                doubleArrayOf(9.351798561151071, 7.334532374100731, 180.0),
+                doubleArrayOf(13.01654676258992, 7.334532374100731, 180.0),
                 doubleArrayOf(12.999280575539576, 14.346762589928069, 270.0),
                 doubleArrayOf(57.44892086330934, 9.968345323740998, 270.0))
             for ((path, end) in followed.allValues.zip(ends)) {
                 assertEquals(end[0], path.endPose().x(), 1e-9)
                 assertEquals(end[1], path.endPose().y(), 1e-9)
                 assertEquals(Math.toRadians(end[2]), path.endPose().heading(), 1e-9)
+            }
+            // Check each heading range, including the exported 90-degree initial pose
+            // followed by path 1's independent 270 -> 180-degree interpolation.
+            val starts = listOf(270.0, 180.0, 180.0, 270.0)
+            for ((index, path) in followed.allValues.withIndex()) {
+                assertEquals(Math.toRadians(starts[index]), path.heading(0.0), 1e-9)
+                assertEquals(Math.toRadians((starts[index] + ends[index][2]) / 2),
+                    path.heading(0.5), 1e-9)
             }
             // RPM 2 remains zero: only RPM 1 opens the gate, and feeding stays latched.
             `when`(motors.getValue("shooter1").velocity).thenReturn(3150.0 * 28 / 60)
