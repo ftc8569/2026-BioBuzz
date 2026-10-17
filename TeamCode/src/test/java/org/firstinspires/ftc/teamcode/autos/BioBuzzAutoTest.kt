@@ -1,176 +1,113 @@
 package org.firstinspires.ftc.teamcode.autos
 
-import com.pedropathing.config.ConfigVar
 import com.pedropathing.follower.Follower
-import com.pedropathing.ivy.Scheduler
 import com.pedropathing.math.Pose
 import com.pedropathing.paths.Path
+import com.qualcomm.robotcore.hardware.DcMotorEx
 import com.qualcomm.robotcore.hardware.HardwareMap
+import com.qualcomm.robotcore.hardware.Servo
+import com.qualcomm.robotcore.hardware.configuration.typecontainers.MotorConfigurationType
 import org.firstinspires.ftc.robotcore.external.Telemetry
-import org.firstinspires.ftc.teamcode.Subsytem.IntakeSubsystem
-import org.firstinspires.ftc.teamcode.Subsytem.ShooterSubsystem
-import org.firstinspires.ftc.teamcode.commands.ShootCommand
+import org.firstinspires.ftc.teamcode.Subsytem.ShooterPidTuning
 import org.firstinspires.ftc.teamcode.pedro.Constants
 import org.junit.Assert.*
 import org.junit.Test
-import org.mockito.ArgumentMatchers.anyDouble
+import org.mockito.ArgumentCaptor
 import org.mockito.Mockito.*
-import kotlin.math.atan2
-import kotlin.math.cos
-import kotlin.math.sin
 
 class BioBuzzAutoTest {
-    private class Rig(val auto: BioBuzzAuto = BioBuzzAuto()) {
+    @Test fun `four imported paths collect only on path two then shoot and latch feeding`() {
         val follower = mock(Follower::class.java)
         val map = mock(HardwareMap::class.java)
-        val shotsDone = mutableSetOf<Int>()
-        val paths = mutableListOf<Path>()
-        var following = false
-        var intakePower = 0.0
-        var startPose: Pose? = null
-        init {
-            Follower::class.java.getField("holdEnd").apply { isAccessible = true }
-                .set(follower, ConfigVar.of(true))
-            `when`(follower.following()).thenAnswer { following }
-            `when`(follower.pose()).thenAnswer { startPose }
-            doAnswer { startPose = it.getArgument(0); null }.`when`(follower).setPose(any(Pose::class.java))
-            doAnswer { paths += it.getArgument<Path>(0); following = true; null }
-                .`when`(follower).follow(any(Path::class.java))
-            auto.hardwareMap = map
-            auto.telemetry = mock(Telemetry::class.java)
+        val motors = listOf("shooter1", "shooter2", "intake1", "intake2")
+            .associateWith { mock(DcMotorEx::class.java) }
+        val blocker = mock(Servo::class.java)
+        val profile = mock(MotorConfigurationType::class.java)
+        `when`(profile.ticksPerRev).thenReturn(28.0)
+        for ((name, motor) in motors) {
+            `when`(map.get(DcMotorEx::class.java, name)).thenReturn(motor)
+            `when`(motor.motorType).thenReturn(profile)
         }
-        fun tick() = auto.loop()
-        fun until(condition: () -> Boolean) {
-            repeat(12) { if (condition()) return; tick() }
-            assertTrue("Auto did not reach the expected step", condition())
-        }
-    }
-
-    private fun withAuto(auto: BioBuzzAuto = BioBuzzAuto(), test: (Rig) -> Unit) {
-        val rig = Rig(auto)
-        mockConstruction(ShooterSubsystem::class.java).use {
-            mockConstruction(IntakeSubsystem::class.java) { intake, _ ->
-                doAnswer { rig.intakePower = it.getArgument(0); null }
-                    .`when`(intake).setPower(anyDouble())
-            }.use {
-                mockConstruction(ShootCommand::class.java) { command, context ->
-                    `when`(command.requirements()).thenReturn(emptySet())
-                    `when`(command.done()).thenAnswer { context.count in rig.shotsDone }
-                }.use {
-                    mockStatic(Constants::class.java).use { factory ->
-                        factory.`when`<Follower> { Constants.create(rig.map) }.thenReturn(rig.follower)
-                        try { rig.auto.init(); test(rig) }
-                        finally { rig.auto.stop(); Scheduler.reset() }
-                    }
-                }
+        `when`(map.get(Servo::class.java, "blocker")).thenReturn(blocker)
+        `when`(follower.pose()).thenReturn(Pose(0.0, 0.0, 0.0))
+        `when`(follower.isBusy).thenReturn(true)
+        val auto = BioBuzzAuto()
+        auto.hardwareMap = map
+        auto.telemetry = mock(Telemetry::class.java)
+        val gains = doubleArrayOf(ShooterPidTuning.kP, ShooterPidTuning.kI,
+            ShooterPidTuning.kD, ShooterPidTuning.kF)
+        ShooterPidTuning.kP = 0.0001
+        ShooterPidTuning.kI = 0.0
+        ShooterPidTuning.kD = 0.0
+        ShooterPidTuning.kF = 0.0
+        try {
+            mockStatic(Constants::class.java).use { constants ->
+                constants.`when`<Follower> { Constants.create(map) }.thenReturn(follower)
+                auto.init()
             }
-        }
-    }
+            val initialPose = ArgumentCaptor.forClass(Pose::class.java)
+            verify(follower).setPose(initialPose.capture())
+            assertEquals(56.0, initialPose.value.x(), 1e-9)
+            assertEquals(11.461151079136723, initialPose.value.y(), 1e-9)
+            assertEquals(Math.PI / 2, initialPose.value.heading(), 1e-9)
+            auto.start()
+            auto.loop() // Path 1: no collecting or shooting.
+            verify(motors.getValue("intake1"), never()).power = 1.0
+            verify(motors.getValue("shooter1"), never()).power = 0.315
 
-    @Test fun `shoot then collect on path one drive path two shoot then drive path three`() = withAuto { rig ->
-        assertEquals(58.4934, rig.startPose!!.x(), 1e-9)
-        assertEquals(9.0389, rig.startPose!!.y(), 1e-9)
-        rig.auto.start()
-        repeat(3) { rig.tick() }
-        assertTrue(rig.paths.isEmpty())
-        rig.shotsDone += 1
-        rig.until { rig.paths.size == 1 }
-        assertEquals(1.0, rig.intakePower, 0.0)
-        // Reaching the curve's parametric end alone must not advance the routine.
-        `when`(rig.follower.atParametricEnd()).thenReturn(true)
-        repeat(3) { rig.tick() }
-        assertEquals(1, rig.paths.size)
-        rig.following = false
-        rig.until { rig.paths.size == 2 }
-        assertEquals(0.0, rig.intakePower, 0.0)
-        rig.following = false
-        repeat(4) { rig.tick() }
-        assertEquals(2, rig.paths.size)
-        assertEquals(0.0, rig.intakePower, 0.0)
-        rig.shotsDone += 2
-        rig.until { rig.paths.size == 3 }
-        assertEquals(0.0, rig.intakePower, 0.0)
-
-        val (one, two, three) = rig.paths
-        assertEquals(10.7034, one.get(1.0).x(), 1e-9)
-        assertEquals(8.5727, one.get(1.0).y(), 1e-9)
-        assertEquals(34.50185, one.get(0.5).x(), 1e-9)
-        assertEquals(10.8717, one.get(0.5).y(), 1e-9)
-        assertAngle(-90.0, one.heading(0.0))
-        assertAngle(-165.0, one.heading(1.0))
-        assertEquals(33.92818671875, two.get(0.25).x(), 1e-9)
-        assertEquals(58.101080859375, two.get(0.25).y(), 1e-9)
-        assertEquals(36.2916875, two.get(0.5).x(), 1e-9)
-        assertEquals(100.91414375, two.get(0.5).y(), 1e-9)
-        assertAngle(-115.0, two.heading(0.0))
-        assertAngle(90.0, two.heading(1.0))
-        assertEquals(46.6136, three.get(0.5).x(), 1e-9)
-        assertEquals(121.822525, three.get(0.5).y(), 1e-9)
-        assertEquals(12.3128, three.get(1.0).x(), 1e-9)
-        assertEquals(115.8693, three.get(1.0).y(), 1e-9)
-        // Reverse tangent faces opposite the initial curve derivative.
-        assertAngle(Math.toDegrees(atan2(119.3084 - 132.804, 57.986 - 58.1696)) + 180,
-            three.heading(0.0))
-        rig.following = false
-        repeat(4) { rig.tick() }
-        assertEquals(3, rig.paths.size)
-        assertEquals(0.0, rig.intakePower, 0.0)
-    }
-
-    @Test fun `cancel during collection stops intake and follower`() = withAuto { rig ->
-        rig.auto.start()
-        rig.shotsDone += 1
-        rig.until { rig.paths.size == 1 }
-        assertEquals(1.0, rig.intakePower, 0.0)
-        rig.auto.stop()
-        assertEquals(0.0, rig.intakePower, 0.0)
-        verify(rig.follower, atLeastOnce()).stop()
-    }
-
-    @Test fun `blue rotates all three red curves and headings while preserving the sequence`() {
-        var redStart: Pose? = null
-        var redPaths: List<Path> = emptyList()
-        withAuto { rig ->
-            redStart = rig.startPose
-            advanceToThirdPath(rig)
-            redPaths = rig.paths.toList()
-        }
-        withAuto(BioBuzzAutoBlue()) { rig ->
-            assertEquals(83.0066, rig.startPose!!.x(), 1e-9)
-            assertEquals(132.4611, rig.startPose!!.y(), 1e-9)
-            assertAngle(90.0, rig.startPose!!.heading())
-            assertEquals(141.5 - redStart!!.x(), rig.startPose!!.x(), 1e-9)
-            advanceToThirdPath(rig)
-            for ((red, blue) in redPaths.zip(rig.paths)) {
-                for (t in listOf(0.0, 0.25, 0.5, 0.75, 1.0)) {
-                    assertEquals(141.5 - red.get(t).x(), blue.get(t).x(), 1e-9)
-                    assertEquals(141.5 - red.get(t).y(), blue.get(t).y(), 1e-9)
-                    assertAngle(Math.toDegrees(red.heading(t)) + 180.0, blue.heading(t))
-                }
+            `when`(follower.isBusy).thenReturn(false)
+            auto.loop() // Enter path 2: intake starts in the same loop.
+            `when`(follower.isBusy).thenReturn(true)
+            repeat(3) {
+                clearInvocations(*motors.values.toTypedArray())
+                auto.loop()
+                for (name in listOf("intake1", "intake2"))
+                    verify(motors.getValue(name)).power = 1.0
+                for (name in listOf("shooter1", "shooter2"))
+                    verify(motors.getValue(name)).power = 0.0
             }
+            `when`(follower.isBusy).thenReturn(false)
+            for (stage in 3..4) {
+                clearInvocations(*motors.values.toTypedArray())
+                auto.loop()
+                for (motor in motors.values) verify(motor).power = 0.0
+            }
+            auto.loop() // Finish path 4: start shooting, wait to feed.
+            for (name in listOf("shooter1", "shooter2"))
+                verify(motors.getValue(name)).power = 0.315
+            verify(follower).hold(any(Pose::class.java))
+            val followed = ArgumentCaptor.forClass(Path::class.java)
+            verify(follower, times(4)).follow(followed.capture())
+            val ends = listOf(
+                doubleArrayOf(43.580575539568336, 9.1251798561151, 180.0),
+                doubleArrayOf(9.351798561151071, 7.334532374100731, 180.0),
+                doubleArrayOf(12.999280575539576, 14.346762589928069, 270.0),
+                doubleArrayOf(57.44892086330934, 9.968345323740998, 270.0))
+            for ((path, end) in followed.allValues.zip(ends)) {
+                assertEquals(end[0], path.endPose().x(), 1e-9)
+                assertEquals(end[1], path.endPose().y(), 1e-9)
+                assertEquals(Math.toRadians(end[2]), path.endPose().heading(), 1e-9)
+            }
+            // RPM 2 remains zero: only RPM 1 opens the gate, and feeding stays latched.
+            `when`(motors.getValue("shooter1").velocity).thenReturn(3150.0 * 28 / 60)
+            auto.loop()
+            verify(blocker).position = 0.65
+            `when`(motors.getValue("shooter1").velocity).thenReturn(0.0)
+            clearInvocations(*motors.values.toTypedArray())
+            auto.loop()
+            for (name in listOf("intake1", "intake2"))
+                verify(motors.getValue(name)).power = 0.70
+            clearInvocations(*motors.values.toTypedArray(), blocker)
+            auto.stop()
+            for (motor in motors.values) verify(motor).power = 0.0
+            verify(blocker, atLeastOnce()).position = 0.78
+            verify(follower).stop()
+        } finally {
+            auto.stop()
+            ShooterPidTuning.kP = gains[0]
+            ShooterPidTuning.kI = gains[1]
+            ShooterPidTuning.kD = gains[2]
+            ShooterPidTuning.kF = gains[3]
         }
-    }
-
-    private fun advanceToThirdPath(rig: Rig) {
-        rig.auto.start()
-        repeat(3) { rig.tick() }
-        assertTrue(rig.paths.isEmpty())
-        rig.shotsDone += 1
-        rig.until { rig.paths.size == 1 }
-        assertEquals(1.0, rig.intakePower, 0.0)
-        rig.following = false
-        rig.until { rig.paths.size == 2 }
-        assertEquals(0.0, rig.intakePower, 0.0)
-        rig.following = false
-        repeat(4) { rig.tick() }
-        assertEquals(2, rig.paths.size)
-        rig.shotsDone += 2
-        rig.until { rig.paths.size == 3 }
-        assertEquals(0.0, rig.intakePower, 0.0)
-    }
-
-    private fun assertAngle(degrees: Double, actual: Double) {
-        val difference = actual - Math.toRadians(degrees)
-        assertEquals(0.0, atan2(sin(difference), cos(difference)), 1e-9)
     }
 }
