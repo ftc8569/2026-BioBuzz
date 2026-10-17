@@ -53,7 +53,13 @@ class RobotLocationSubsystem(
     // "pinpoint" must exactly match the device name in the Robot Controller
     // hardware configuration.
     private val pinpoint = hardwareMap.get(GoBildaPinpointDriver::class.java, PINPOINT_NAME)
-    private var hiveLocation: FieldLocation? = null
+    private var redHiveLocation: FieldLocation? = null
+    var redHiveTargetLocation: FieldLocation? = null
+        private set
+    private var blueHiveLocation: FieldLocation? = null
+    var blueHiveTargetLocation: FieldLocation? = null
+        private set
+
     init {
         // Tell Pinpoint where its two tracking pods are mounted.
         pinpoint.setOffsets(
@@ -99,12 +105,42 @@ class RobotLocationSubsystem(
         )
     }
 
-    fun updateHiveLocation() {
-        hiveLocation = getLocation()
+    fun updateRedHiveLocation() {
+        val hive = getLocation()
+        redHiveLocation = hive
+        redHiveTargetLocation = getApproachTarget(hive)
+    }
+
+    fun updateBlueHiveLocation() {
+        val hive = getLocation()
+        blueHiveLocation = hive
+        blueHiveTargetLocation = getApproachTarget(hive)
+    }
+
+    private fun getApproachTarget(hive: FieldLocation): FieldLocation {
+        val rightX = kotlin.math.sin(hive.headingRadians)
+        val rightY = -kotlin.math.cos(hive.headingRadians)
+        val forwardX = kotlin.math.cos(hive.headingRadians)
+        val forwardY = kotlin.math.sin(hive.headingRadians)
+        return FieldLocation(
+            xInches = hive.xInches + RED_HIVE_RIGHT_OFFSET_INCHES * rightX +
+                RED_HIVE_FORWARD_OFFSET_INCHES * forwardX,
+            yInches = hive.yInches + RED_HIVE_RIGHT_OFFSET_INCHES * rightY +
+                RED_HIVE_FORWARD_OFFSET_INCHES * forwardY,
+            headingRadians = hive.headingRadians
+        )
     }
 
     fun calculateRotationToBlueHive(location: FieldLocation): Double? {
-        val hive = hiveLocation ?: return null
+        return calculateRotationToHive(blueHiveLocation, location)
+    }
+
+    fun calculateRotationToRedHive(location: FieldLocation): Double? {
+        return calculateRotationToHive(redHiveLocation, location)
+    }
+
+    private fun calculateRotationToHive(hive: FieldLocation?, location: FieldLocation): Double? {
+        hive ?: return null
         val deltaX = hive.xInches - location.xInches
         val deltaY = hive.yInches - location.yInches
         return kotlin.math.atan2(deltaY, deltaX)
@@ -113,6 +149,8 @@ class RobotLocationSubsystem(
     companion object {
         // This is the hardware configuration name used to find the Pinpoint.
         private const val PINPOINT_NAME = "pinpoint"
+        private const val RED_HIVE_RIGHT_OFFSET_INCHES = 3.0
+        private const val RED_HIVE_FORWARD_OFFSET_INCHES = 53.369
 
     }
 }
