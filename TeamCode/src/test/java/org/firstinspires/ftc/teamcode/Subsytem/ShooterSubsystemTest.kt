@@ -1,239 +1,266 @@
 package org.firstinspires.ftc.teamcode.Subsytem
 
 import com.qualcomm.robotcore.hardware.DcMotor
-import com.qualcomm.robotcore.hardware.DcMotorSimple
 import com.qualcomm.robotcore.hardware.DcMotorEx
 import com.qualcomm.robotcore.hardware.HardwareMap
 import com.qualcomm.robotcore.hardware.Servo
+import com.qualcomm.robotcore.hardware.configuration.annotations.MotorType
 import com.qualcomm.robotcore.hardware.configuration.typecontainers.MotorConfigurationType
+import org.firstinspires.ftc.teamcode.hardware.BioBuzzShooterMotor
 import org.firstinspires.ftc.teamcode.Subsytem.ShooterSubsystem.ControlMode
+import org.firstinspires.ftc.teamcode.teleop.FeedControls
+import org.junit.After
+import org.junit.Before
 import org.junit.Assert.*
 import org.junit.Test
 import org.mockito.ArgumentMatchers.anyDouble
 import org.mockito.Mockito.*
-import com.qualcomm.robotcore.hardware.configuration.annotations.MotorType
-import org.firstinspires.ftc.teamcode.hardware.BioBuzzShooterMotor
 
 class ShooterSubsystemTest {
-    @Test fun `one to one shooter profile converts encoder speed without 99 point 5 reduction`() {
-        val profile = BioBuzzShooterMotor::class.java.getAnnotation(MotorType::class.java)!!
-        assertEquals(28.0, profile.ticksPerRev, 0.0)
-        assertEquals(1.0, profile.gearing, 0.0)
-        val rig = Rig(profile.ticksPerRev, profile.ticksPerRev)
-        // This raw speed displayed as 50 RPM under the old 2786-tick profile.
-        rig.speed1 = 50.0 * 2786.0 / 60.0
-        rig.speed2 = -rig.speed1
-        rig.step(0, power = 0.64)
-        assertEquals(4975.0, rig.shooter.measuredRpm1, 1e-9)
-        assertEquals(4975.0, rig.shooter.measuredRpm2, 1e-9)
-        assertEquals(2880.0, rig.shooter.targetRpm, 1e-9)
-        assertEquals(1344.0, rig.shooter.targetTicksPerSecond1, 1e-9)
-        assertEquals(1344.0, rig.shooter.targetTicksPerSecond2, 1e-9)
+    @Before fun useTestGains() {
+        // Keep regression expectations independent of the operator's tuned defaults.
+        ShooterPidTuning.kP = 0.0003
+        ShooterPidTuning.kI = 0.0002
+        ShooterPidTuning.kD = 0.0
+        ShooterPidTuning.kF = 0.0
     }
 
-    private class Rig(cpr1: Double = 28.0, cpr2: Double = 28.0) {
+    @After fun restoreGains() {
+        ShooterPidTuning.kP = ShooterPidTuning.DEFAULT_KP
+        ShooterPidTuning.kI = ShooterPidTuning.DEFAULT_KI
+        ShooterPidTuning.kD = ShooterPidTuning.DEFAULT_KD
+        ShooterPidTuning.kF = ShooterPidTuning.DEFAULT_KF
+    }
+
+    private class Rig(val cpr1: Double = 28.0, val cpr2: Double = 28.0) {
         val motor1 = mock(DcMotorEx::class.java)
         val motor2 = mock(DcMotorEx::class.java)
-        val servo = mock(Servo::class.java)
-        private val map = mock(HardwareMap::class.java)
-        var now = 0L
+        val blocker = mock(Servo::class.java)
         var speed1 = 0.0
         var speed2 = 0.0
         var power1 = 0.0
         var power2 = 0.0
-        var servoPosition = 0.0
+        var now = 0L
         val shooter: ShooterSubsystem
 
         init {
+            val map = mock(HardwareMap::class.java)
             `when`(map.get(DcMotorEx::class.java, "shooter1")).thenReturn(motor1)
             `when`(map.get(DcMotorEx::class.java, "shooter2")).thenReturn(motor2)
-            `when`(map.get(Servo::class.java, "blocker")).thenReturn(servo)
-            val profile1 = mock(MotorConfigurationType::class.java)
-            val profile2 = mock(MotorConfigurationType::class.java)
-            `when`(profile1.ticksPerRev).thenReturn(cpr1)
-            `when`(profile2.ticksPerRev).thenReturn(cpr2)
-            `when`(motor1.motorType).thenReturn(profile1)
-            `when`(motor2.motorType).thenReturn(profile2)
+            `when`(map.get(Servo::class.java, "blocker")).thenReturn(blocker)
+            for ((motor, cpr) in listOf(motor1 to cpr1, motor2 to cpr2)) {
+                val profile = mock(MotorConfigurationType::class.java)
+                `when`(profile.ticksPerRev).thenReturn(cpr)
+                `when`(motor.motorType).thenReturn(profile)
+            }
             `when`(motor1.velocity).thenAnswer { speed1 }
             `when`(motor2.velocity).thenAnswer { speed2 }
             doAnswer { power1 = it.getArgument(0); null }.`when`(motor1).setPower(anyDouble())
             doAnswer { power2 = it.getArgument(0); null }.`when`(motor2).setPower(anyDouble())
-            doAnswer { servoPosition = it.getArgument(0); null }.`when`(servo).setPosition(anyDouble())
             shooter = ShooterSubsystem(map) { now }
         }
 
-        fun step(ms: Long, power: Double = 0.66, mode: ControlMode = ControlMode.VELOCITY_PID) {
-            now += ms * 1_000_000L
+        fun rpm(first: Double, second: Double = first) {
+            speed1 = first * cpr1 / 60.0
+            speed2 = -second * cpr2 / 60.0
+        }
+
+        // Fixed test target: 0.64 * 4500 = 2880 RPM, independent of the operator preset.
+        fun step(ms: Long = 0, power: Double = 0.64, mode: ControlMode = ControlMode.VELOCITY_PID) {
+            now += ms * 1_000_000
             shooter.updateShot(power, mode)
         }
-
-        fun ready() {
-            speed1 = 2970.0 * shooter.configuredTicksPerRev1 / 60.0
-            speed2 = -2970.0 * shooter.configuredTicksPerRev2 / 60.0
-            step(0)
-            step(150)
-            assertTrue(shooter.feedReady)
-        }
     }
 
-    @Test fun `PID starts enabled and 66 percent sets 2970 RPM immediately`() {
+    @Test fun `one to one profile converts both readings to actual RPM`() {
+        val profile = BioBuzzShooterMotor::class.java.getAnnotation(MotorType::class.java)!!
+        assertEquals(28.0, profile.ticksPerRev, 0.0)
+        assertEquals(1.0, profile.gearing, 0.0)
+        val rig = Rig(profile.ticksPerRev, profile.ticksPerRev)
+        rig.speed1 = 50.0 * 2786.0 / 60.0
+        rig.speed2 = -rig.speed1
+        rig.step()
+        assertEquals(4975.0, rig.shooter.measuredRpm1, 1e-9)
+        assertEquals(4975.0, rig.shooter.measuredRpm2, 1e-9)
+        assertEquals(2880.0, rig.shooter.targetRpm, 1e-9)
+        assertEquals(1344.0, rig.shooter.targetTicksPerSecond1, 1e-9)
+    }
+
+    @Test fun `Panels P changes affect both FTCLib controllers on next loop`() {
+        ShooterPidTuning.kP = 0.0001
+        ShooterPidTuning.kI = 0.0
         val rig = Rig()
-        verify(rig.motor1).setDirection(DcMotorSimple.Direction.FORWARD)
-        verify(rig.motor2).setDirection(DcMotorSimple.Direction.REVERSE)
-        assertEquals(ControlMode.VELOCITY_PID, rig.shooter.controlMode)
+        rig.step()
+        assertEquals(0.288, rig.power1, 1e-9)
+        assertEquals(0.288, rig.power2, 1e-9)
+        ShooterPidTuning::class.java.getField("kP").setDouble(null, 0.0002)
+        rig.step(20)
+        assertEquals(0.576, rig.power1, 1e-9)
+        assertEquals(0.576, rig.power2, 1e-9)
         verify(rig.motor1).setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER)
-        verify(rig.motor2).setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER)
-        rig.step(0)
-        assertEquals(4500.0, ShooterSubsystem.MAX_MOTOR_RPM, 0.0)
-        assertEquals(2970.0, rig.shooter.targetRpm, 1e-9)
-        assertEquals(1386.0, rig.shooter.targetTicksPerSecond1, 1e-9)
-        assertTrue(rig.power1 > 0.66)
-        assertFalse(rig.shooter.feedReady)
-        assertEquals(0.24, rig.servoPosition, 1e-12)
     }
 
-    @Test fun `each encoder converts to the same motor RPM using its own counts per rev`() {
-        val rig = Rig(28.0, 56.0)
-        rig.ready()
-        assertEquals(2970.0, rig.shooter.measuredRpm1, 1e-9)
-        assertEquals(2970.0, rig.shooter.measuredRpm2, 1e-9)
-        assertEquals(1386.0, rig.shooter.targetTicksPerSecond1, 1e-9)
-        assertEquals(2772.0, rig.shooter.targetTicksPerSecond2, 1e-9)
-        assertEquals(0.66, rig.power1, 1e-12)
-        assertEquals(0.66, rig.power2, 1e-12)
-    }
-
-    @Test fun `both wheels need dwell and shot speed loss closes blocker until recovery`() {
+    @Test fun `FTCLib feedforward is optional and zero gains stop output and transfer`() {
+        ShooterPidTuning.kP = 0.0
+        ShooterPidTuning.kI = 0.0
+        ShooterPidTuning.kF = 0.0001
         val rig = Rig()
-        rig.speed1 = 1386.0
-        rig.speed2 = -1100.0
-        rig.step(0)
-        rig.step(1000)
-        assertFalse(rig.shooter.feedReady)
-        assertTrue(rig.power2 > rig.power1)
-        rig.speed2 = -1386.0
+        rig.step()
+        assertEquals(0.288, rig.power1, 1e-9)
+        rig.rpm(2880.0)
         rig.step(20)
-        rig.step(149)
-        assertFalse(rig.shooter.feedReady)
-        rig.step(1)
-        assertTrue(rig.shooter.blockerOpen)
-        rig.speed1 *= 0.90
-        rig.step(20)
-        assertFalse(rig.shooter.feedReady)
-        assertEquals(0.24, rig.servoPosition, 1e-12)
-        rig.speed1 = 1386.0
-        rig.step(20)
-        rig.step(150)
         assertTrue(rig.shooter.feedReady)
-    }
-
-    @Test fun `release battery sag and preset change never learn a lower RPM`() {
-        val rig = Rig()
-        rig.ready()
-        rig.shooter.setFlywheelPower(0.0)
-        assertFalse(rig.shooter.feedReady)
-        rig.speed1 = 1100.0
-        rig.speed2 = -1100.0
+        ShooterPidTuning.kF = 0.0
         rig.step(20)
-        rig.step(2000)
-        assertEquals(2970.0, rig.shooter.targetRpm, 1e-9)
-        assertFalse(rig.shooter.feedReady)
-        rig.step(20, power = 0.68)
-        assertEquals(3060.0, rig.shooter.targetRpm, 1e-9)
-        assertFalse(rig.shooter.feedReady)
-        rig.step(20, power = 1.0)
-        assertEquals(4500.0, rig.shooter.targetRpm, 1e-9)
-    }
-
-    @Test fun `missing encoder blocks feed and recovers without bumper release`() {
-        val rig = Rig()
-        rig.speed1 = 1386.0
-        rig.step(0)
-        rig.step(3000)
-        assertTrue(rig.shooter.encoderFault)
-        assertFalse(rig.shooter.feedReady)
-        rig.shooter.setManualBlockerOpen(true)
-        assertFalse(rig.shooter.blockerOpen)
-        assertEquals(0.66, rig.power1, 1e-12)
-        rig.speed2 = -1386.0
-        rig.step(20)
-        assertFalse(rig.shooter.encoderFault)
-        rig.step(150)
-        assertTrue(rig.shooter.feedReady)
-        assertEquals(2970.0, rig.shooter.targetRpm, 1e-9)
-    }
-
-    @Test fun `B cannot bypass PID speed gate on startup during shots or when idle`() {
-        val rig = Rig()
-        rig.shooter.setManualBlockerOpen(true)
-        assertFalse(rig.shooter.blockerOpen)
-        rig.step(0)
-        assertFalse(rig.shooter.blockerOpen)
-        rig.ready()
-        rig.speed1 = 0.0
-        rig.step(20)
-        assertTrue(rig.shooter.encoderFault)
-        assertFalse(rig.shooter.blockerOpen)
-        rig.shooter.setFlywheelPower(0.0)
-        assertFalse(rig.shooter.blockerOpen)
-    }
-
-    @Test fun `manual mode retains timed feed and B override but switching to PID closes it`() {
-        val rig = Rig()
-        rig.step(0, mode = ControlMode.MANUAL_POWER)
-        rig.step(2999, mode = ControlMode.MANUAL_POWER)
-        assertFalse(rig.shooter.feedReady)
-        assertEquals(0.66, rig.power1, 1e-12)
-        rig.step(1, mode = ControlMode.MANUAL_POWER)
-        assertTrue(rig.shooter.feedReady)
-        assertFalse(rig.shooter.atSpeed)
-        rig.shooter.setFlywheelPower(0.0)
-        rig.shooter.setManualBlockerOpen(true)
-        assertTrue(rig.shooter.blockerOpen)
-        rig.shooter.setControlMode(ControlMode.VELOCITY_PID)
-        assertFalse(rig.shooter.blockerOpen)
-        rig.step(0)
-        assertFalse(rig.shooter.feedReady)
-    }
-
-    @Test fun `preset changes reverse stop and invalid power clear readiness`() {
-        val rig = Rig()
-        rig.ready()
-        rig.step(20, power = 0.68)
-        assertFalse(rig.shooter.feedReady)
-        rig.shooter.setFlywheelPower(-0.8)
-        assertEquals(-0.8, rig.power1, 1e-12)
-        assertFalse(rig.shooter.feedReady)
-        assertEquals(0.0, rig.shooter.targetRpm, 0.0)
-        assertFalse(rig.shooter.blockerOpen)
-        rig.step(20, power = Double.NaN)
         assertEquals(0.0, rig.power1, 0.0)
-        rig.shooter.setFlywheelPower(Double.NaN)
         assertEquals(0.0, rig.power2, 0.0)
-    }
-
-    @Test fun `nonfinite feedback blocks feed and recovers without propagating NaN power`() {
-        val rig = Rig()
-        rig.speed1 = Double.NaN
-        rig.step(0)
-        assertTrue(rig.shooter.encoderFault)
-        assertEquals(0.66, rig.power1, 1e-12)
         assertFalse(rig.shooter.feedReady)
-        rig.ready()
-        assertFalse(rig.shooter.encoderFault)
+        assertFalse(rig.shooter.blockerOpen)
     }
 
-    @Test fun `invalid counts per rev stop PID motors and cannot open blocker`() {
-        for (cpr in listOf(0.0, -1.0, Double.NaN, Double.POSITIVE_INFINITY)) {
-            val rig = Rig(cpr)
-            rig.step(0)
-            rig.shooter.setManualBlockerOpen(true)
-            assertFalse(rig.shooter.rpmConfigurationValid)
-            assertTrue(rig.shooter.encoderFault)
-            assertFalse(rig.shooter.feedReady)
-            assertFalse(rig.shooter.blockerOpen)
-            assertEquals(0.0, rig.power1, 0.0)
-            assertEquals(0.0, rig.power2, 0.0)
-        }
+    @Test fun `transfer latches after RPM one reaches five percent and survives speed drops`() {
+        val rig = Rig(60.0, 60.0)
+        rig.rpm(2735.0, 2880.0)
+        rig.step()
+        assertFalse(rig.shooter.feedReady)
+        rig.rpm(3025.0, 2880.0)
+        rig.step(20)
+        assertFalse(rig.shooter.feedReady)
+        rig.rpm(2736.0, 0.0) // Flywheel 2 is ignored; RPM 1 is exactly -5%.
+        rig.step(20)
+        assertTrue(rig.shooter.feedReady)
+        assertTrue(rig.shooter.blockerOpen)
+        rig.rpm(3024.0, 6000.0) // RPM 1 exactly +5%.
+        rig.step(20)
+        assertTrue(rig.shooter.feedReady)
+        rig.rpm(2735.0, 2880.0)
+        rig.step(20)
+        assertTrue(rig.shooter.feedReady)
+        assertTrue(rig.shooter.blockerOpen)
+        assertFalse(rig.shooter.atSpeed)
+        assertEquals(0.64, FeedControls.intakePower(false, 0.0, 0.64, 0.64,
+            ControlMode.VELOCITY_PID, rig.shooter.feedReady, false), 0.0)
+        assertEquals(0.0, FeedControls.intakePower(true, 0.0, 0.64, 0.64,
+            ControlMode.VELOCITY_PID, rig.shooter.feedReady, false), 0.0)
+        rig.rpm(3025.0, 2880.0)
+        rig.step(20)
+        assertTrue(rig.shooter.feedReady)
+        rig.rpm(2880.0, 2880.0)
+        rig.step(20)
+        assertTrue(rig.shooter.feedReady)
+    }
+
+    @Test fun `release reverse and mode changes reset the feed latch`() {
+        val rig = Rig()
+        rig.rpm(2880.0)
+        rig.step()
+        assertTrue(rig.shooter.feedReady)
+        rig.shooter.setFlywheelPower(0.0)
+        assertFalse(rig.shooter.feedReady)
+        assertFalse(rig.shooter.blockerOpen)
+        rig.rpm(2000.0)
+        rig.step(20)
+        assertFalse(rig.shooter.feedReady)
+        rig.rpm(2880.0)
+        rig.step(20)
+        assertTrue(rig.shooter.feedReady)
+        rig.shooter.setFlywheelPower(-0.8)
+        assertFalse(rig.shooter.feedReady)
+        rig.rpm(2880.0)
+        rig.step(20)
+        assertTrue(rig.shooter.feedReady)
+        rig.shooter.setControlMode(ControlMode.MANUAL_POWER)
+        assertFalse(rig.shooter.feedReady)
+        rig.shooter.setControlMode(ControlMode.VELOCITY_PID)
+        rig.rpm(2000.0)
+        rig.step(20)
+        assertFalse(rig.shooter.feedReady)
+    }
+
+    @Test fun `each motor uses its own encoder counts and a preset change resets readiness`() {
+        val rig = Rig(28.0, 56.0)
+        rig.rpm(2880.0)
+        rig.step()
+        assertEquals(2880.0, rig.shooter.measuredRpm1, 1e-9)
+        assertEquals(2880.0, rig.shooter.measuredRpm2, 1e-9)
+        assertTrue(rig.shooter.feedReady)
+        rig.step(20, power = 0.8)
+        assertEquals(3600.0, rig.shooter.targetRpm, 0.0)
+        assertFalse(rig.shooter.feedReady)
+    }
+
+    @Test fun `zero RPM never triggers a timed motor shutdown`() {
+        ShooterPidTuning.kP = 0.0001
+        ShooterPidTuning.kI = 0.0
+        val rig = Rig()
+        rig.step()
+        rig.step(10000)
+        assertEquals(0.288, rig.power1, 1e-9)
+        assertEquals(0.288, rig.power2, 1e-9)
+        assertFalse(rig.shooter.feedReady)
+        rig.rpm(2880.0, 0.0)
+        rig.step(20)
+        assertTrue(rig.shooter.feedReady)
+        rig.rpm(0.0, 2880.0)
+        rig.step(20)
+        assertEquals(0.288, rig.power1, 1e-9)
+        assertEquals(0.288, rig.power2, 1e-9)
+        assertTrue(rig.shooter.feedReady)
+    }
+
+    @Test fun `both motors use RPM one even when RPM two disagrees`() {
+        ShooterPidTuning.kP = 0.0001
+        ShooterPidTuning.kI = 0.0
+        val rig = Rig()
+        rig.rpm(2000.0, 6000.0)
+        rig.step()
+        assertEquals(0.088, rig.power1, 1e-9)
+        assertEquals(0.088, rig.power2, 1e-9)
+        rig.speed2 = Double.NaN
+        rig.step(20)
+        assertEquals(0.088, rig.power1, 1e-9)
+        assertEquals(0.088, rig.power2, 1e-9)
+    }
+
+    @Test fun `zero gains keep both motors off while the button remains held`() {
+        val rig = Rig()
+        rig.step()
+        for (name in listOf("kP", "kI", "kD", "kF"))
+            ShooterPidTuning::class.java.getField(name).setDouble(null, 0.0)
+        rig.step(20)
+        rig.step(3000)
+        assertEquals(0.0, rig.power1, 0.0)
+        assertEquals(0.0, rig.power2, 0.0)
+        assertFalse(rig.shooter.feedReady)
+    }
+
+    @Test fun `manual mode runs raw power and switching or releasing closes feeding`() {
+        val rig = Rig()
+        rig.step(mode = ControlMode.MANUAL_POWER)
+        assertEquals(0.64, rig.power1, 0.0)
+        rig.shooter.setManualBlockerOpen(true)
+        assertTrue(rig.shooter.blockerOpen)
+        rig.step(20, mode = ControlMode.VELOCITY_PID)
+        assertFalse(rig.shooter.blockerOpen)
+        rig.shooter.setFlywheelPower(0.0)
+        assertEquals(0.0, rig.power1, 0.0)
+        assertEquals(0.0, rig.power2, 0.0)
+        assertEquals(0.0, rig.shooter.targetRpm, 0.0)
+        rig.shooter.setFlywheelPower(-0.8)
+        assertEquals(-0.8, rig.power1, 0.0)
+        assertFalse(rig.shooter.feedReady)
+    }
+
+    @Test fun `invalid numeric input never produces NaN motor power`() {
+        ShooterPidTuning.kP = Double.NaN
+        val rig = Rig()
+        rig.step()
+        assertEquals(0.0, rig.power1, 0.0)
+        assertFalse(rig.shooter.feedReady)
+        restoreGains()
+        val badProfile = Rig(0.0, 28.0)
+        badProfile.step()
+        assertEquals(0.0, badProfile.power1, 0.0)
+        assertFalse(badProfile.shooter.feedReady)
     }
 }

@@ -8,21 +8,21 @@ class ShooterControlsTest {
     @Test fun `PID display target remains selected while idle and tracks preset changes`() {
         val controls = ShooterControls()
         assertEquals(0.0, controls.requestedPower(false, false), 0.0)
-        assertEquals(2880.0, controls.pidTargetRpm!!, 1e-9)
+        assertEquals(3330.0, controls.pidTargetRpm!!, 1e-9)
         controls.update(false, true, false)
-        assertEquals(2970.0, controls.pidTargetRpm!!, 1e-9)
-        assertEquals(0.66, controls.requestedPower(false, true), 1e-9)
-        assertEquals(2970.0, controls.pidTargetRpm!!, 1e-9)
+        assertEquals(3375.0, controls.pidTargetRpm!!, 1e-9)
+        assertEquals(0.75, controls.requestedPower(false, true), 1e-9)
+        assertEquals(3375.0, controls.pidTargetRpm!!, 1e-9)
         controls.update(true, false, false)
         assertNull(controls.pidTargetRpm)
         controls.update(false, false, false)
-        assertEquals(2970.0, controls.pidTargetRpm!!, 1e-9)
+        assertEquals(3375.0, controls.pidTargetRpm!!, 1e-9)
     }
 
     @Test fun `starts in PID and manual shooter runs only while Y is held`() {
         val controls = ShooterControls()
         assertEquals(ControlMode.VELOCITY_PID, controls.mode)
-        assertEquals(0.64, controls.preset, 1e-9)
+        assertEquals(0.74, controls.preset, 1e-9)
         assertEquals(0.0, controls.requestedPower(false, false), 1e-9)
         assertEquals(controls.preset, controls.requestedPower(false, true), 1e-9)
         controls.update(true, false, false)
@@ -45,7 +45,7 @@ class ShooterControlsTest {
     @Test fun `preset changes only on edges and stays within motor power range`() {
         val controls = ShooterControls()
         repeat(20) { controls.update(false, true, false) }
-        assertEquals(0.66, controls.preset, 1e-9)
+        assertEquals(0.75, controls.preset, 1e-9)
         repeat(100) {
             controls.update(false, false, false)
             controls.update(false, true, false)

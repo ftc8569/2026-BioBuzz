@@ -6,6 +6,7 @@ import com.qualcomm.robotcore.hardware.DcMotorSimple
 import com.qualcomm.robotcore.hardware.HardwareMap
 import com.qualcomm.robotcore.hardware.Servo
 import dev.nextftc.core.subsystems.Subsystem
+import com.arcrobotics.ftclib.controller.PIDFController
 import kotlin.math.abs
 
 class ShooterSubsystem(
@@ -24,8 +25,7 @@ class ShooterSubsystem(
     val configuredMaxTicksPerSecond1 = shooter1.motorType.achieveableMaxTicksPerSecond
     val configuredMaxTicksPerSecond2 = shooter2.motorType.achieveableMaxTicksPerSecond
     val rpmConfigurationValid: Boolean get() =
-        configuredTicksPerRev1.isFinite() && configuredTicksPerRev1 > 0.0 &&
-        configuredTicksPerRev2.isFinite() && configuredTicksPerRev2 > 0.0
+        configuredTicksPerRev1.isFinite() && configuredTicksPerRev1 > 0.0
 
     var measuredTicksPerSecond1 = 0.0
         private set
@@ -40,7 +40,8 @@ class ShooterSubsystem(
     val targetTicksPerSecond1: Double get() =
         if (rpmConfigurationValid) targetRpm * configuredTicksPerRev1 / 60.0 else 0.0
     val targetTicksPerSecond2: Double get() =
-        if (rpmConfigurationValid) targetRpm * configuredTicksPerRev2 / 60.0 else 0.0
+        if (configuredTicksPerRev2.isFinite() && configuredTicksPerRev2 > 0.0)
+            targetRpm * configuredTicksPerRev2 / 60.0 else 0.0
     var encoderPosition1 = 0
         private set
     var encoderPosition2 = 0
@@ -58,8 +59,6 @@ class ShooterSubsystem(
         private set
     var feedReadiness = "Shooter off"
         private set
-    var encoderFault = false
-        private set
     var controlMode = ControlMode.VELOCITY_PID
         private set
     var speedStatus = "Off"
@@ -67,20 +66,19 @@ class ShooterSubsystem(
 
     private var requestedPower = 0.0
     private var spinupStartedNanos = -1L
-    private var lastControlNanos = -1L
-    private var inToleranceSinceNanos = -1L
-    private var feedbackEstablished = false
     private var manualBlockerOpen = false
-    private val controller1 = VelocityPidfController()
-    private val controller2 = VelocityPidfController()
+    private val pid = PIDFController(0.0, 0.0, 0.0, 0.0)
+    private var appliedP = Double.NaN
+    private var appliedI = Double.NaN
+    private var appliedD = Double.NaN
+    private var appliedF = Double.NaN
+    val pidGainsRead: String get() = "$appliedP / $appliedI / $appliedD / $appliedF"
 
     companion object {
         // Application reference for preset -> RPM, not the motor's rated 6000 RPM.
         const val MAX_MOTOR_RPM = (3600.0 / 8.0) * 10.0
-        private const val ENCODER_CHECK_NANOS = 3_000_000_000L
         private const val POWER_SPINUP_NANOS = 3_000_000_000L
         private const val READY_SPEED_FRACTION = 0.05
-        private const val READY_STABLE_NANOS = 150_000_000L
         private const val BLOCKER_OPEN = 0.45
         private const val BLOCKER_CLOSED = 0.24
     }
@@ -91,7 +89,7 @@ class ShooterSubsystem(
         shooter2.direction = DcMotorSimple.Direction.REVERSE
         shooter1.zeroPowerBehavior = DcMotor.ZeroPowerBehavior.FLOAT
         shooter2.zeroPowerBehavior = DcMotor.ZeroPowerBehavior.FLOAT
-        // Software PIDF reads encoders but commands power; avoid a second hub velocity loop.
+        // FTCLib controls power; encoders supply feedback without a second Hub PID loop.
         shooter1.mode = DcMotor.RunMode.RUN_WITHOUT_ENCODER
         shooter2.mode = DcMotor.RunMode.RUN_WITHOUT_ENCODER
         shooter1.power = 0.0
@@ -104,8 +102,7 @@ class ShooterSubsystem(
         if (mode != controlMode) {
             resetSpeedHold()
             controlMode = mode
-            shooter1.power = 0.0
-            shooter2.power = 0.0
+            stopFlywheels()
             updateBlocker()
         }
     }
@@ -125,6 +122,8 @@ class ShooterSubsystem(
         if (spinupStartedNanos == -1L) spinupStartedNanos = now
 
         if (mode == ControlMode.MANUAL_POWER) {
+            shooter1.mode = DcMotor.RunMode.RUN_WITHOUT_ENCODER
+            shooter2.mode = DcMotor.RunMode.RUN_WITHOUT_ENCODER
             shooter1.power = clipped
             shooter2.power = clipped
             feedReady = now - spinupStartedNanos >= POWER_SPINUP_NANOS
@@ -136,48 +135,32 @@ class ShooterSubsystem(
         }
 
         targetRpm = clipped * MAX_MOTOR_RPM
-        // A transient dropout must close feeding, but must not latch the intake off forever.
-        encoderFault = !rpmConfigurationValid ||
-            !measuredRpm1.isFinite() || !measuredRpm2.isFinite() ||
-            ((feedbackEstablished || now - spinupStartedNanos >= ENCODER_CHECK_NANOS) &&
-                (measuredTicksPerSecond1 < 1.0 || measuredTicksPerSecond2 < 1.0))
-        if (encoderFault) {
-            controller1.reset()
-            controller2.reset()
-            lastControlNanos = -1L
-            inToleranceSinceNanos = -1L
+        if (!applyPidGains()) {
+            pid.reset()
             atSpeed = false
             feedReady = false
-            // Preserve a bounded spin-up command for a missing encoder, never authorize feed.
-            // Invalid calibration cannot be used for RPM control.
-            shooter1.power = if (rpmConfigurationValid) clipped else 0.0
-            shooter2.power = if (rpmConfigurationValid) clipped else 0.0
-            speedStatus = if (rpmConfigurationValid) "Encoder unavailable: waiting for feedback"
-                else "Invalid encoder ticks/rev: correct motor configuration"
-            feedReadiness = "PID feedback fault - feeding blocked"
+            stopFlywheels()
+            speedStatus = "PID disabled: check P/I/D/F gains"
+            feedReadiness = "PID disabled - feeding blocked"
             updateBlocker()
             return false
         }
 
-        if (measuredTicksPerSecond1 >= 1.0 && measuredTicksPerSecond2 >= 1.0) {
-            feedbackEstablished = true
+        // Flywheel 1 is the only PID feedback; both motors receive the same output.
+        val output = if (measuredRpm1.isFinite()) pid.calculate(measuredRpm1, targetRpm) else {
+            pid.reset()
+            0.0
         }
-        val dt = if (lastControlNanos == -1L) 0.0 else
-            ((now - lastControlNanos) / 1e9).coerceIn(0.0, 0.1)
-        lastControlNanos = now
-        shooter1.power = controller1.calculate(targetRpm, measuredRpm1, dt)
-        shooter2.power = controller2.calculate(targetRpm, measuredRpm2, dt)
+        val motorPower = if (output.isFinite()) output.coerceIn(0.0, 1.0) else 0.0
+        shooter1.power = motorPower
+        shooter2.power = motorPower
 
-        val bothReady = withinTolerance(measuredRpm1) && withinTolerance(measuredRpm2)
-        if (bothReady) {
-            if (inToleranceSinceNanos == -1L) inToleranceSinceNanos = now
-        } else {
-            inToleranceSinceNanos = -1L
-        }
-        atSpeed = bothReady && now - inToleranceSinceNanos >= READY_STABLE_NANOS
-        feedReady = atSpeed
+        atSpeed = withinTolerance(measuredRpm1)
+        // Latch feeding once ready; release, mode/preset changes, or disabled gains reset it.
+        feedReady = feedReady || atSpeed
         speedStatus = if (atSpeed) "PID holding target RPM" else "PID reaching target RPM"
-        feedReadiness = if (atSpeed) "Both motors at target RPM" else "Waiting for both motors' RPM"
+        feedReadiness = if (feedReady) "Feeding latched: target speed reached"
+            else "Waiting for flywheel 1 RPM"
         updateBlocker()
         return atSpeed
     }
@@ -190,12 +173,43 @@ class ShooterSubsystem(
 
     fun setFlywheelPower(power: Double) {
         val clipped = if (power.isFinite()) power.coerceIn(-1.0, 0.0) else 0.0
+        shooter1.mode = DcMotor.RunMode.RUN_WITHOUT_ENCODER
+        shooter2.mode = DcMotor.RunMode.RUN_WITHOUT_ENCODER
         shooter1.power = clipped
         shooter2.power = clipped
         resetSpeedHold()
         readSpeeds()
         speedStatus = if (clipped < 0.0) "Reversing" else "Off"
         updateBlocker()
+    }
+
+    private fun applyPidGains(): Boolean {
+        val p = ShooterPidTuning.kP
+        val i = ShooterPidTuning.kI
+        val d = ShooterPidTuning.kD
+        val f = ShooterPidTuning.kF
+        if (!p.isFinite() || !i.isFinite() || !d.isFinite() || !f.isFinite() ||
+            p < 0 || i < 0 || d < 0 || f < 0)
+            return false
+        if (p != appliedP || i != appliedI || d != appliedD || f != appliedF) {
+            pid.setPIDF(p, i, d, f)
+            // FTCLib bounds accumulated error; limit its I contribution to motor power.
+            val integralLimit = if (i > 0.0) 1.0 / i else 0.0
+            pid.setIntegrationBounds(-integralLimit, integralLimit)
+            pid.reset()
+            appliedP = p
+            appliedI = i
+            appliedD = d
+            appliedF = f
+        }
+        return p > 0 || i > 0 || d > 0 || f > 0
+    }
+
+    private fun stopFlywheels() {
+        shooter1.mode = DcMotor.RunMode.RUN_WITHOUT_ENCODER
+        shooter2.mode = DcMotor.RunMode.RUN_WITHOUT_ENCODER
+        shooter1.power = 0.0
+        shooter2.power = 0.0
     }
 
     private fun readSpeeds() {
@@ -205,7 +219,7 @@ class ShooterSubsystem(
         measuredTicksPerSecond2 = abs(shooter2.velocity)
         measuredRpm1 = if (rpmConfigurationValid)
             measuredTicksPerSecond1 * 60.0 / configuredTicksPerRev1 else Double.NaN
-        measuredRpm2 = if (rpmConfigurationValid)
+        measuredRpm2 = if (configuredTicksPerRev2.isFinite() && configuredTicksPerRev2 > 0.0)
             measuredTicksPerSecond2 * 60.0 / configuredTicksPerRev2 else Double.NaN
     }
 
@@ -214,15 +228,10 @@ class ShooterSubsystem(
             abs(measuredRpm - targetRpm) <= targetRpm * READY_SPEED_FRACTION
 
     private fun resetSpeedHold() {
-        encoderFault = false
-        feedbackEstablished = false
         requestedPower = 0.0
         spinupStartedNanos = -1L
         targetRpm = 0.0
-        lastControlNanos = -1L
-        inToleranceSinceNanos = -1L
-        controller1.reset()
-        controller2.reset()
+        pid.reset()
         atSpeed = false
         feedReady = false
         feedReadiness = "Shooter off"

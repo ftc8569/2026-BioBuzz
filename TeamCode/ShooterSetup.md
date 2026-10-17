@@ -1,68 +1,26 @@
 # BioBuzz shooter setup
 
-Every new TeleOp starts with **velocity PID enabled**, at a **64% preset**.
-The preset reference speed is `(3600 / 8) * 10 = 4500 RPM`. In PID, the preset selects
-`target motor RPM = preset * 4500`, so the default target is **2880 RPM**.
-PID adjusts actual output power as needed to reach that target.
+- **Hold right bumper:** FTCLib PIDF shooting.
+- **Hold Y:** manual power only while held (takes priority over right bumper).
+- **Release both:** shooter and automatic feeding stop.
+- **Left bumper:** reverse at -0.8.
+- **D-pad up/down:** change the preset by 0.01. Default is 0.74 / 3330 RPM.
 
-- Gamepad 1 right bumper: run the shooter at the selected preset.
-- Either gamepad D-pad up/down: change the preset by 2 percentage points, bounded
-  to 0–100%. Each step changes the PID target by 90 RPM.
-- Gamepad 1 Y: hold to run manual power; release to stop and return to PID.
-  Manual uses the same preset as raw motor power.
-- Gamepad 1 left bumper: reverse the shooter at -0.8, taking priority over right
-  bumper. Reverse/release stops automatic feeding and closes the PID blocker.
-- Gamepad 1 right/left trigger: intake forward/reverse. With the shooter running,
-  forward feed waits for readiness; when ready, right trigger sets intake power,
-  otherwise automatic intake uses the selected preset. With the shooter off,
-  right trigger collects normally. Reverse can clear a jam at any time.
-- Gamepad 1 A: stop intake, including automatic feeding.
-- Either gamepad B: manual blocker open **in manual mode only**. In PID, B and
-  B + right trigger cannot bypass the speed gate.
+Both shooter motors use the custom **BioBuzz shooter goBILDA 1:1** profile:
+28 encoder counts per output revolution. The generic SDK goBILDA profile is
+99.5:1 and must not be selected for these motors. The application uses 4500 RPM
+as its preset reference; this is separate from the motor's rated 6000 RPM.
 
-PID opens the blocker and starts forward feeding only after **both** motors stay
-within 5% of target RPM for 150 ms. A speed drop immediately closes the blocker
-and stops forward feeding; it resumes after the same readiness dwell. The
-blocker commands are 0.45 open and 0.24 closed. Manual mode retains the
-three-second automatic spin-up timer and the B + trigger feed override; it
-cannot verify actual speed.
+Panels > **Configurables > ShooterPidTuning** exposes `kP`, `kI`, `kD`, and `kF`.
+F defaults to 0.000212. Both motors get the same PID output calculated from RPM 1. The shared controller reads live edits; all-zero gains stop PID
+shooting. There is no motor-fault timeout or zero-speed shutdown.
 
-## Motor polarity
+In PID mode, feeding latches on once **flywheel 1 RPM** reaches **±5%** of target
+(**3163.5–3496.5 RPM** at the default target). Intake and the blocker stay enabled
+through later RPM drops. Releasing shooting, reversing, changing modes or the
+preset, or disabling PID gains resets the latch. B and forward trigger cannot
+bypass the initial speed check. A stops intake while held. Reverse remains available for jams.
+Manual mode retains its three-second automatic feed timer and B override.
 
-Gamepad 1 Y holds manual shooter mode. Hive aiming uses gamepad 1 X to save the hive
-location and gamepad 2 Y to aim; manual right-stick turning cancels aiming.
-
-The shooter pair now uses motor 1 `FORWARD` and motor 2 `REVERSE`
-(previously motor 1 `REVERSE` and motor 2 `FORWARD`). This swaps the physical
-shooting/reversing directions: every positive shooter command now applies the
-opposite electrical polarity, and every negative shooter command does too.
-The intake pair remains motor 1 `REVERSE` and motor 2 `FORWARD`.
-The motor names, buttons, power magnitudes, RPM targets, and feed gates stay the
-same. Shooter Motor Diagnostic uses the same updated directions.
-
-## Encoder configuration
-
-The motor names are `shooter1`, `shooter2`, `intake1`, `intake2`, and `blocker`.
-Connect both power and encoder cables to matching hub ports. Both shooters use
-the confirmed goBILDA 1:1 gearbox: **28 encoder counts per output revolution**,
-with the custom **BioBuzz shooter goBILDA 1:1** motor type. The active configuration
-and `robot-configs/BioBuzz.xml` select this type for shooter1 and shooter2.
-
-```text
-measured motor RPM = abs(encoder ticks per second) * 60 / 28
-PID target RPM = preset * 4500; default 0.64 -> 2880 RPM
-```
-
-The generic SDK goBILDA profile describes a 99.5:1 gearbox and 2786 counts per
-revolution. That profile incorrectly displayed about 50 RPM for an actual
-4975 RPM on the 1:1 shooter. The 4500 RPM preset reference remains separate from
-the 1:1 motor profile's rated 6000 RPM.
-
-A missing encoder blocks PID feeding and holds bounded preset power while
-waiting for feedback. Valid readings restore PID automatically; there is no
-permanent intake-disable latch. Non-finite feedback is treated as a fault.
-Run **Shooter Motor Diagnostic** to verify both encoder readings and profiles;
-run **Blocker Diagnostic** to verify physical servo positions.
-
-See [SHOOTER_TUNING.md](SHOOTER_TUNING.md) for controller details, references,
-validation, and Gradle/Sloth deployment commands.
+See [SHOOTER_TUNING.md](SHOOTER_TUNING.md) for library details, Panels defaults,
+and local checks. Robot deployment and execution by agents are prohibited.

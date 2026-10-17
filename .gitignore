@@ -82,3 +82,6 @@ lint/tmp/
 
 # Kotlin compiler project cache
 .kotlin/
+
+# Generated code graph
+graphify-out/
