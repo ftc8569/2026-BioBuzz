@@ -6,7 +6,7 @@ import org.junit.Test
 
 class FeedControlsTest {
     private fun feed(ready: Boolean, manual: Double = 0.0, b: Boolean = false,
-                     mode: ControlMode = ControlMode.VELOCITY_PID,
+                     mode: ControlMode = ControlMode.VELOCITY_LQR,
                      shooterPower: Double = 0.66, stop: Boolean = false): Double =
         FeedControls.intakePower(stop, manual, shooterPower, 0.66, mode, ready, b)
 
@@ -36,7 +36,7 @@ class FeedControlsTest {
         fun moving(manual: Double = 0.0, shooting: Double = 0.0,
                    stop: Boolean = false, ready: Boolean = false): Double =
             FeedControls.intakePower(stop, manual, shooting, 0.1,
-                ControlMode.VELOCITY_PID, ready, false, minimumPower = 0.2)
+                ControlMode.VELOCITY_LQR, ready, false, minimumPower = 0.2)
         assertEquals(0.2, moving(), 0.0)
         assertEquals(0.2, moving(manual = 0.1), 0.0)
         assertEquals(0.8, moving(manual = 0.8), 0.0)

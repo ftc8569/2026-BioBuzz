@@ -2,7 +2,7 @@ package org.firstinspires.ftc.teamcode.teleop
 
 import org.firstinspires.ftc.teamcode.Subsytem.ShooterSubsystem.ControlMode
 
-/** Resolve feeding every loop; a trigger cannot bypass RPM readiness in PID shooting. */
+/** Resolve feeding every loop; a trigger cannot bypass RPM readiness in LQR shooting. */
 internal object FeedControls {
     fun intakePower(stop: Boolean, manualPower: Double, shooterPower: Double,
                     preset: Double, mode: ControlMode, feedReady: Boolean,

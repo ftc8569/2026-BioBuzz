@@ -67,7 +67,7 @@ public class BioBuzzAuto extends OpMode {
         }
 
         if (pathIndex == paths.length) {
-            shooter.updateShot(SHOOTER_PRESET, ShooterSubsystem.ControlMode.VELOCITY_PID);
+            shooter.updateShot(SHOOTER_PRESET, ShooterSubsystem.ControlMode.VELOCITY_LQR);
             intake.setPower(shooter.getFeedReady() ? SHOOTER_PRESET : 0.0);
         } else {
             shooter.setFlywheelPower(0.0);

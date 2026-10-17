@@ -8,7 +8,7 @@ import com.qualcomm.robotcore.hardware.HardwareMap
 import com.qualcomm.robotcore.hardware.Servo
 import com.qualcomm.robotcore.hardware.configuration.typecontainers.MotorConfigurationType
 import org.firstinspires.ftc.robotcore.external.Telemetry
-import org.firstinspires.ftc.teamcode.Subsytem.ShooterPidTuning
+import org.firstinspires.ftc.teamcode.Subsytem.ShooterLqrTuning
 import org.firstinspires.ftc.teamcode.pedro.Constants
 import org.junit.Assert.*
 import org.junit.Test
@@ -34,12 +34,12 @@ class BioBuzzAutoTest {
         val auto = BioBuzzAuto()
         auto.hardwareMap = map
         auto.telemetry = mock(Telemetry::class.java)
-        val gains = doubleArrayOf(ShooterPidTuning.kP, ShooterPidTuning.kI,
-            ShooterPidTuning.kD, ShooterPidTuning.kF)
-        ShooterPidTuning.kP = 0.0001
-        ShooterPidTuning.kI = 0.0
-        ShooterPidTuning.kD = 0.0
-        ShooterPidTuning.kF = 0.0
+        val gains = doubleArrayOf(ShooterLqrTuning.kV, ShooterLqrTuning.kA,
+            ShooterLqrTuning.rpmTolerance, ShooterLqrTuning.voltageTolerance)
+        ShooterLqrTuning.kV = ShooterLqrTuning.DEFAULT_KV
+        ShooterLqrTuning.kA = ShooterLqrTuning.DEFAULT_KA
+        ShooterLqrTuning.rpmTolerance = ShooterLqrTuning.DEFAULT_RPM_TOLERANCE
+        ShooterLqrTuning.voltageTolerance = ShooterLqrTuning.DEFAULT_VOLTAGE_TOLERANCE
         try {
             mockStatic(Constants::class.java).use { constants ->
                 constants.`when`<Follower> { Constants.create(map) }.thenReturn(follower)
@@ -53,7 +53,7 @@ class BioBuzzAutoTest {
             auto.start()
             auto.loop() // Path 1: no collecting or shooting.
             verify(motors.getValue("intake1"), never()).power = 1.0
-            verify(motors.getValue("shooter1"), never()).power = 0.315
+            verify(motors.getValue("shooter1"), never()).power = 1.0
 
             `when`(follower.isBusy).thenReturn(false)
             auto.loop() // Enter path 2: intake starts in the same loop.
@@ -74,7 +74,7 @@ class BioBuzzAutoTest {
             }
             auto.loop() // Finish path 4: start shooting, wait to feed.
             for (name in listOf("shooter1", "shooter2"))
-                verify(motors.getValue(name)).power = 0.315
+                verify(motors.getValue(name)).power = 1.0
             verify(follower).hold(any(Pose::class.java))
             val followed = ArgumentCaptor.forClass(Path::class.java)
             verify(follower, times(4)).follow(followed.capture())
@@ -112,10 +112,10 @@ class BioBuzzAutoTest {
             verify(follower).stop()
         } finally {
             auto.stop()
-            ShooterPidTuning.kP = gains[0]
-            ShooterPidTuning.kI = gains[1]
-            ShooterPidTuning.kD = gains[2]
-            ShooterPidTuning.kF = gains[3]
+            ShooterLqrTuning.kV = gains[0]
+            ShooterLqrTuning.kA = gains[1]
+            ShooterLqrTuning.rpmTolerance = gains[2]
+            ShooterLqrTuning.voltageTolerance = gains[3]
         }
     }
 }

@@ -7,7 +7,6 @@ import com.qualcomm.robotcore.hardware.HardwareMap
 import com.qualcomm.robotcore.hardware.VoltageSensor
 import com.qualcomm.robotcore.hardware.Servo
 import dev.nextftc.core.subsystems.Subsystem
-import com.arcrobotics.ftclib.controller.PIDFController
 import org.firstinspires.ftc.teamcode.diagnostics.LoopProfiler
 import org.firstinspires.ftc.teamcode.diagnostics.LoopStage
 import kotlin.math.abs
@@ -16,7 +15,11 @@ class ShooterSubsystem(
     hardwareMap: HardwareMap,
     private val nanoTime: () -> Long = System::nanoTime
 ) : Subsystem {
-    enum class ControlMode { MANUAL_POWER, VELOCITY_PID }
+    enum class ControlMode {
+        MANUAL_POWER, VELOCITY_LQR,
+        /** Source compatibility for older autonomous callers; uses the LQR controller. */
+        @Deprecated("Use VELOCITY_LQR") VELOCITY_PID
+    }
 
     private val shooter1 = hardwareMap.get(DcMotorEx::class.java, "shooter1")
     private val shooter2 = hardwareMap.get(DcMotorEx::class.java, "shooter2")
@@ -112,7 +115,7 @@ class ShooterSubsystem(
         private set
     var feedReadiness = "Shooter off"
         private set
-    var controlMode = ControlMode.VELOCITY_PID
+    var controlMode = ControlMode.VELOCITY_LQR
         private set
     var speedStatus = "Off"
         private set
@@ -120,12 +123,15 @@ class ShooterSubsystem(
     private var requestedPower = 0.0
     private var spinupStartedNanos = -1L
     private var manualBlockerOpen = false
-    private val pid = PIDFController(0.0, 0.0, 0.0, 0.0)
-    private var appliedP = Double.NaN
-    private var appliedI = Double.NaN
-    private var appliedD = Double.NaN
-    private var appliedF = Double.NaN
-    val pidGainsRead: String get() = "$appliedP / $appliedI / $appliedD / $appliedF"
+    private val lqr = FlywheelLqr()
+    private var lastLqrUpdateNanos: Long? = null
+    private var lastLqrModel: FlywheelLqrConfig? = null
+    var lqrFeedbackGain = 0.0
+        private set
+    var lqrRequestedVolts = 0.0
+        private set
+    var lqrModelRead = "Not sampled"
+        private set
 
     companion object {
         // Application reference for preset -> RPM, not the motor's rated 6000 RPM.
@@ -143,7 +149,7 @@ class ShooterSubsystem(
         shooter2.direction = DcMotorSimple.Direction.REVERSE
         shooter1.zeroPowerBehavior = DcMotor.ZeroPowerBehavior.FLOAT
         shooter2.zeroPowerBehavior = DcMotor.ZeroPowerBehavior.FLOAT
-        // FTCLib controls power; encoders supply feedback without a second Hub PID loop.
+        // LQR commands voltage through motor power; Hub velocity control stays disabled.
         setRunWithoutEncoder()
         shooter1.power = 0.0
         shooter2.power = 0.0
@@ -154,11 +160,12 @@ class ShooterSubsystem(
 
     fun stopVoltagePolling() = batteryVoltage.close()
 
-    /** Also sync the mode while idle, so a stale manual override cannot bypass PID. */
+    /** Also sync the mode while idle, so a stale manual override cannot bypass velocity control. */
     fun setControlMode(mode: ControlMode) {
-        if (mode != controlMode) {
+        val selected = if (mode == ControlMode.VELOCITY_PID) ControlMode.VELOCITY_LQR else mode
+        if (selected != controlMode) {
             resetSpeedHold()
-            controlMode = mode
+            controlMode = selected
             stopFlywheels()
             updateBlocker()
         }
@@ -190,37 +197,45 @@ class ShooterSubsystem(
         }
 
         targetRpm = clipped * MAX_MOTOR_RPM
-        if (!applyPidGains()) {
-            pid.reset()
+        val model = ShooterLqrTuning.snapshot()
+        if (model != lastLqrModel) {
+            lastLqrModel = model
+            lqrModelRead = "kV=${model.kV}, kA=${model.kA}, RPM cost=${model.rpmTolerance}, V cost=${model.voltageTolerance}"
+        }
+        val previous = lastLqrUpdateNanos
+        val dt = if (previous != null && now > previous) (now-previous)/1_000_000_000.0
+            else ShooterLqrTuning.NOMINAL_PERIOD_SECONDS
+        lastLqrUpdateNanos = now
+        // Flywheel 1 remains the measured state; both motors receive the same voltage.
+        val outputVolts = timed(LoopStage.SHOOTER_LQR) { lqr.calculate(measuredRpm1, targetRpm, dt, model) }
+        if (outputVolts == null) {
+            lastLqrUpdateNanos = null
+            lqrFeedbackGain = 0.0
+            lqrRequestedVolts = 0.0
             atSpeed = false
             feedReady = false
             stopFlywheels()
-            speedStatus = "PID disabled: check P/I/D/F gains"
-            feedReadiness = "PID disabled - feeding blocked"
+            speedStatus = "LQR disabled: invalid model, weights, or RPM feedback"
+            feedReadiness = "LQR disabled - feeding blocked"
             updateBlocker()
             return false
         }
-
-        // Flywheel 1 is the only PID feedback; both motors receive the same output.
-        val output = timed(LoopStage.SHOOTER_PID) {
-            if (measuredRpm1.isFinite()) pid.calculate(measuredRpm1, targetRpm) else {
-                pid.reset()
-                0.0
-            }
-        }
-        applyNormalizedPower(if (output.isFinite()) output.coerceAtLeast(0.0) else 0.0)
+        lqrFeedbackGain = lqr.feedbackGain
+        lqrRequestedVolts = outputVolts.coerceAtLeast(0.0)
+        // Existing compensation converts the 12 V fraction to volts / cached battery V.
+        applyNormalizedPower(lqrRequestedVolts / NOMINAL_VOLTAGE)
 
         atSpeed = withinTolerance(measuredRpm1)
         // Latch feeding once ready; release, mode/preset changes, or disabled gains reset it.
         feedReady = feedReady || atSpeed
-        speedStatus = if (atSpeed) "PID holding target RPM" else "PID reaching target RPM"
+        speedStatus = if (atSpeed) "LQR holding target RPM" else "LQR reaching target RPM"
         feedReadiness = if (feedReady) "Feeding latched: target speed reached"
             else "Waiting for flywheel 1 RPM"
         updateBlocker()
         return atSpeed
     }
 
-    /** Manual mode only: PID never allows B to open the blocker before measured readiness. */
+    /** Manual mode only: Velocity control never allows B to open the blocker before measured readiness. */
     fun setManualBlockerOpen(open: Boolean) {
         manualBlockerOpen = open
         updateBlocker()
@@ -236,7 +251,7 @@ class ShooterSubsystem(
         updateBlocker()
     }
 
-    /** Inputs and PIDF gains express power at 12 V; clamp only after compensation. */
+    /** Manual requests and LQR volts/12 express power at 12 V; clamp only after compensation. */
     private fun applyNormalizedPower(power: Double) {
         val voltage = if (phasedIo) frameVoltage else batteryVoltage.voltage
         desiredPower = if (power.isFinite())
@@ -245,28 +260,6 @@ class ShooterSubsystem(
             shooter1.power = desiredPower
             shooter2.power = desiredPower
         }
-    }
-
-    private fun applyPidGains(): Boolean {
-        val p = ShooterPidTuning.kP
-        val i = ShooterPidTuning.kI
-        val d = ShooterPidTuning.kD
-        val f = ShooterPidTuning.kF
-        if (!p.isFinite() || !i.isFinite() || !d.isFinite() || !f.isFinite() ||
-            p < 0 || i < 0 || d < 0 || f < 0)
-            return false
-        if (p != appliedP || i != appliedI || d != appliedD || f != appliedF) {
-            pid.setPIDF(p, i, d, f)
-            // FTCLib bounds accumulated error; limit its I contribution to motor power.
-            val integralLimit = if (i > 0.0) 1.0 / i else 0.0
-            pid.setIntegrationBounds(-integralLimit, integralLimit)
-            pid.reset()
-            appliedP = p
-            appliedI = i
-            appliedD = d
-            appliedF = f
-        }
-        return p > 0 || i > 0 || d > 0 || f > 0
     }
 
     private inline fun <T> timed(stage: LoopStage, block: () -> T): T {
@@ -310,7 +303,9 @@ class ShooterSubsystem(
         requestedPower = 0.0
         spinupStartedNanos = -1L
         targetRpm = 0.0
-        pid.reset()
+        lastLqrUpdateNanos = null
+        lqrFeedbackGain = 0.0
+        lqrRequestedVolts = 0.0
         atSpeed = false
         feedReady = false
         feedReadiness = "Shooter off"
@@ -322,7 +317,7 @@ class ShooterSubsystem(
         blockerStatus = when {
             manualOpenAllowed -> "Manual open"
             requestedPower > 0.0 -> feedReadiness
-            manualBlockerOpen -> "Manual override disabled in PID"
+            manualBlockerOpen -> "Manual override disabled in LQR"
             else -> "Shooter off"
         }
         desiredBlockerPosition = if (blockerOpen) BLOCKER_OPEN else BLOCKER_CLOSED

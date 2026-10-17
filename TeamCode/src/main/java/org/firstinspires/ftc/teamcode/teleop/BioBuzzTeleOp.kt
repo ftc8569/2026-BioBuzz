@@ -248,7 +248,7 @@ class BioBuzzTeleOp : NextFTCOpMode() {
 
             currentShooterPower = shooterControls.requestedPower(
                 reverse = g1.left_bumper,
-                pidShoot = g1.right_bumper
+                velocityShoot = g1.right_bumper
             )
 
             profiler.measure(LoopStage.SHOOTER_CONTROL) {
@@ -272,7 +272,7 @@ class BioBuzzTeleOp : NextFTCOpMode() {
                 stop = g1.a,
                 manualPower = manualIntakePower,
                 shooterPower = currentShooterPower,
-                preset = 1.0,
+                preset = 0.6,
                 mode = shooterMode,
                 feedReady = shooter.feedReady,
                 manualBlockerOpen = manualBlockerOpen,
@@ -306,16 +306,18 @@ class BioBuzzTeleOp : NextFTCOpMode() {
             telemetry.addData("Drive intake assist (G1 left-stick click)", driveIntakeControls.enabled)
             telemetry.addData("Shooter flywheel 1 RPM", "%.0f", shooter.measuredRpm1)
             telemetry.addData("Shooter flywheel 2 RPM", "%.0f", shooter.measuredRpm2)
-            val selectedPidTarget = shooterControls.pidTargetRpm
-            if (selectedPidTarget != null) {
-                telemetry.addData("PID target RPM", "%.0f", selectedPidTarget)
+            val selectedVelocityTarget = shooterControls.velocityTargetRpm
+            if (selectedVelocityTarget != null) {
+                telemetry.addData("LQR target RPM", "%.0f", selectedVelocityTarget)
             } else {
-                telemetry.addData("PID target RPM", "Manual mode: no RPM target")
+                telemetry.addData("LQR target RPM", "Manual mode: no RPM target")
             }
-            telemetry.addData("PID shooting active", selectedPidTarget != null && currentShooterPower > 0.0)
-            telemetry.addData("PID commanded RPM", "%.0f", shooter.targetRpm)
-            telemetry.addData("PIDF gains (P/I/D/F)", shooter.pidGainsRead)
-            telemetry.addData("PID feedback", "Flywheel 1 RPM (shared motor power)")
+            telemetry.addData("LQR shooting active", selectedVelocityTarget != null && currentShooterPower > 0.0)
+            telemetry.addData("LQR commanded RPM", "%.0f", shooter.targetRpm)
+            telemetry.addData("LQR model and cost tolerances", shooter.lqrModelRead)
+            telemetry.addData("LQR feedback gain (V/RPM)", shooter.lqrFeedbackGain)
+            telemetry.addData("LQR requested voltage (V)", shooter.lqrRequestedVolts)
+            telemetry.addData("LQR feedback", "Flywheel 1 RPM (shared motor power)")
             telemetry.addData("Shooter preset (G1/G2 up/down)", "%.3f", shooterPreset)
             telemetry.addData("Shooter mode (hold G1 Y for manual)", shooterMode)
             telemetry.addData("Shooter speed state", shooter.speedStatus)
@@ -324,7 +326,7 @@ class BioBuzzTeleOp : NextFTCOpMode() {
             telemetry.addData("Shooter motor power 1 / 2", "%.2f / %.2f", shooter.flywheelPower1, shooter.flywheelPower2)
             telemetry.addData("Manual blocker (G1/G2 B)", g1.b || g2.b)
             telemetry.addData("Blocker open", shooter.blockerOpen)
-            telemetry.addData("Flywheel 1 within 5 percent of target", shooter.atSpeed)
+            telemetry.addData("Flywheel 1 within 1 percent of target", shooter.atSpeed)
             telemetry.addData("Automatic feed ready", shooter.feedReady)
             telemetry.addData("Feed readiness", shooter.feedReadiness)
             telemetry.addData("Blocker status", shooter.blockerStatus)
@@ -335,7 +337,7 @@ class BioBuzzTeleOp : NextFTCOpMode() {
                 shooter.measuredTicksPerSecond1, shooter.measuredTicksPerSecond2)
             telemetry.addData("Encoder position ticks 1 / 2", "%d / %d",
                 shooter.encoderPosition1, shooter.encoderPosition2)
-            telemetry.addData("PID target ticks/s 1 / 2", "%.0f / %.0f",
+            telemetry.addData("LQR target ticks/s 1 / 2", "%.0f / %.0f",
                 shooter.targetTicksPerSecond1, shooter.targetTicksPerSecond2)
             telemetry.addData("Motor config ticks/rev 1 / 2", "%.0f / %.0f",
                 shooter.configuredTicksPerRev1, shooter.configuredTicksPerRev2)

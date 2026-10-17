@@ -18,7 +18,7 @@ internal enum class LoopStage(val label: String) {
     MECHANISMS_TOTAL("Mechanisms total"),
     SHOOTER_CONTROL("Shooter control total"),
     SHOOTER_ENCODERS("Shooter encoder and velocity reads"),
-    SHOOTER_PID("Shooter PID calculation"),
+    SHOOTER_LQR("Shooter LQR calculation"),
     SHOOTER_MODES("Shooter motor mode writes"),
     SHOOTER_OUTPUT("Shooter motor output commit"),
     BLOCKER_OUTPUT("Blocker servo output commit"),

@@ -34,15 +34,15 @@ class ShootCommand @JvmOverloads constructor(
             transferStarted = null
             blockerDelay = BlockerFeedDelay(nanoTime)
             stopAll()
-            shooter.setControlMode(ControlMode.VELOCITY_PID)
+            shooter.setControlMode(ControlMode.VELOCITY_LQR)
             follower.hold(follower.pose())
         }
         setExecute {
             if (!finished) {
-                shooter.updateShot(power, ControlMode.VELOCITY_PID)
+                shooter.updateShot(power, ControlMode.VELOCITY_LQR)
                 val requested = FeedControls.intakePower(
                     stop = false, manualPower = 0.0, shooterPower = power,
-                    preset = 1.0, mode = ControlMode.VELOCITY_PID,
+                    preset = 1.0, mode = ControlMode.VELOCITY_LQR,
                     feedReady = shooter.feedReady, manualBlockerOpen = false
                 )
                 val transferPower = blockerDelay.apply(requested, shooter.blockerOpen)

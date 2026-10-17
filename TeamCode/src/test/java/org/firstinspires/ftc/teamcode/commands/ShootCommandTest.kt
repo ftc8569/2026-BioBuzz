@@ -36,7 +36,7 @@ class ShootCommandTest {
         rig.step(5000)
         assertEquals(0.0, rig.power, 0.0)
         assertFalse(rig.command.done())
-        verify(rig.shooter).updateShot(0.7, ControlMode.VELOCITY_PID)
+        verify(rig.shooter).updateShot(0.7, ControlMode.VELOCITY_LQR)
         rig.ready = true
         rig.step(6000)
         rig.step(6099)

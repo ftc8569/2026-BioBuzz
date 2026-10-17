@@ -20,19 +20,13 @@ import org.mockito.ArgumentMatchers.anyDouble
 import org.mockito.Mockito.*
 
 class ShooterSubsystemTest {
-    @Before fun useTestGains() {
-        // Keep regression expectations independent of the operator's tuned defaults.
-        ShooterPidTuning.kP = 0.0003
-        ShooterPidTuning.kI = 0.0002
-        ShooterPidTuning.kD = 0.0
-        ShooterPidTuning.kF = 0.0
-    }
+    @Before fun useTestModel() = restoreModel()
 
-    @After fun restoreGains() {
-        ShooterPidTuning.kP = ShooterPidTuning.DEFAULT_KP
-        ShooterPidTuning.kI = ShooterPidTuning.DEFAULT_KI
-        ShooterPidTuning.kD = ShooterPidTuning.DEFAULT_KD
-        ShooterPidTuning.kF = ShooterPidTuning.DEFAULT_KF
+    @After fun restoreModel() {
+        ShooterLqrTuning.kV = ShooterLqrTuning.DEFAULT_KV
+        ShooterLqrTuning.kA = ShooterLqrTuning.DEFAULT_KA
+        ShooterLqrTuning.rpmTolerance = ShooterLqrTuning.DEFAULT_RPM_TOLERANCE
+        ShooterLqrTuning.voltageTolerance = ShooterLqrTuning.DEFAULT_VOLTAGE_TOLERANCE
     }
 
     private class Rig(val cpr1: Double = 28.0, val cpr2: Double = 28.0) {
@@ -77,7 +71,7 @@ class ShooterSubsystemTest {
         }
 
         // Fixed test target: 0.64 * 4500 = 2880 RPM, independent of the operator preset.
-        fun step(ms: Long = 0, power: Double = 0.64, mode: ControlMode = ControlMode.VELOCITY_PID) {
+        fun step(ms: Long = 0, power: Double = 0.64, mode: ControlMode = ControlMode.VELOCITY_LQR) {
             now += ms * 1_000_000
             // Publish a sample deterministically; production does this on the poller.
             shooter.batteryVoltage.pollOnce()
@@ -129,14 +123,13 @@ class ShooterSubsystemTest {
         }
     }
 
-    @Test fun `PID output tracks battery voltage without changing RPM target`() {
-        ShooterPidTuning.kP = 0.0001
-        ShooterPidTuning.kI = 0.0
+    @Test fun `LQR equilibrium voltage tracks battery voltage without changing RPM target`() {
         val rig = Rig()
+        rig.rpm(2880.0)
         for (voltage in listOf(12.0, 10.0, 14.0)) {
             rig.voltage = voltage
             rig.step(20)
-            assertEquals(0.288 * 12.0 / voltage, rig.power1, 1e-9)
+            assertEquals(ShooterLqrTuning.kV * 2880.0 / voltage, rig.power1, 1e-9)
             assertEquals(rig.power1, rig.power2, 0.0)
             assertEquals(2880.0, rig.shooter.targetRpm, 1e-9)
         }
@@ -188,36 +181,30 @@ class ShooterSubsystemTest {
         assertEquals(1344.0, rig.shooter.targetTicksPerSecond1, 1e-9)
     }
 
-    @Test fun `Panels P changes affect both FTCLib controllers on next loop`() {
-        ShooterPidTuning.kP = 0.0001
-        ShooterPidTuning.kI = 0.0
+    @Test fun `Panels model changes affect shared LQR output on next loop`() {
         val rig = Rig()
+        rig.rpm(2880.0)
         rig.step()
-        assertEquals(0.288, rig.power1, 1e-9)
-        assertEquals(0.288, rig.power2, 1e-9)
-        ShooterPidTuning::class.java.getField("kP").setDouble(null, 0.0002)
+        val previous = rig.power1
+        ShooterLqrTuning::class.java.getField("kV").setDouble(null, ShooterLqrTuning.kV * 1.1)
         rig.step(20)
-        assertEquals(0.576, rig.power1, 1e-9)
-        assertEquals(0.576, rig.power2, 1e-9)
+        assertEquals(previous * 1.1, rig.power1, 1e-9)
+        assertEquals(rig.power1, rig.power2, 0.0)
         verify(rig.motor1).setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER)
     }
 
-    @Test fun `FTCLib feedforward is optional and zero gains stop output and transfer`() {
-        ShooterPidTuning.kP = 0.0
-        ShooterPidTuning.kI = 0.0
-        ShooterPidTuning.kF = 0.0001
+    @Test fun `invalid LQR model stops output and closes latched feeding`() {
         val rig = Rig()
-        rig.step()
-        assertEquals(0.288, rig.power1, 1e-9)
         rig.rpm(2880.0)
-        rig.step(20)
+        rig.step()
         assertTrue(rig.shooter.feedReady)
-        ShooterPidTuning.kF = 0.0
+        ShooterLqrTuning.kA = 0.0
         rig.step(20)
         assertEquals(0.0, rig.power1, 0.0)
         assertEquals(0.0, rig.power2, 0.0)
         assertFalse(rig.shooter.feedReady)
         assertFalse(rig.shooter.blockerOpen)
+        assertTrue(rig.shooter.speedStatus.startsWith("LQR disabled"))
     }
 
     @Test fun `transfer latches after RPM one reaches five percent and survives speed drops`() {
@@ -241,9 +228,9 @@ class ShooterSubsystemTest {
         assertTrue(rig.shooter.blockerOpen)
         assertFalse(rig.shooter.atSpeed)
         assertEquals(0.64, FeedControls.intakePower(false, 0.0, 0.64, 0.64,
-            ControlMode.VELOCITY_PID, rig.shooter.feedReady, false), 0.0)
+            ControlMode.VELOCITY_LQR, rig.shooter.feedReady, false), 0.0)
         assertEquals(0.0, FeedControls.intakePower(true, 0.0, 0.64, 0.64,
-            ControlMode.VELOCITY_PID, rig.shooter.feedReady, false), 0.0)
+            ControlMode.VELOCITY_LQR, rig.shooter.feedReady, false), 0.0)
         rig.rpm(3025.0, 2880.0)
         rig.step(20)
         assertTrue(rig.shooter.feedReady)
@@ -273,7 +260,7 @@ class ShooterSubsystemTest {
         assertTrue(rig.shooter.feedReady)
         rig.shooter.setControlMode(ControlMode.MANUAL_POWER)
         assertFalse(rig.shooter.feedReady)
-        rig.shooter.setControlMode(ControlMode.VELOCITY_PID)
+        rig.shooter.setControlMode(ControlMode.VELOCITY_LQR)
         rig.rpm(2000.0)
         rig.step(20)
         assertFalse(rig.shooter.feedReady)
@@ -292,43 +279,37 @@ class ShooterSubsystemTest {
     }
 
     @Test fun `zero RPM never triggers a timed motor shutdown`() {
-        ShooterPidTuning.kP = 0.0001
-        ShooterPidTuning.kI = 0.0
         val rig = Rig()
         rig.step()
         rig.step(10000)
-        assertEquals(0.288, rig.power1, 1e-9)
-        assertEquals(0.288, rig.power2, 1e-9)
+        assertTrue(rig.power1 > 0.0)
+        assertEquals(rig.power1, rig.power2, 0.0)
         assertFalse(rig.shooter.feedReady)
         rig.rpm(2880.0, 0.0)
         rig.step(20)
         assertTrue(rig.shooter.feedReady)
         rig.rpm(0.0, 2880.0)
         rig.step(20)
-        assertEquals(0.288, rig.power1, 1e-9)
-        assertEquals(0.288, rig.power2, 1e-9)
+        assertTrue(rig.power1 > 0.0)
         assertTrue(rig.shooter.feedReady)
     }
 
     @Test fun `both motors use RPM one even when RPM two disagrees`() {
-        ShooterPidTuning.kP = 0.0001
-        ShooterPidTuning.kI = 0.0
         val rig = Rig()
-        rig.rpm(2000.0, 6000.0)
+        rig.rpm(2800.0, 6000.0)
         rig.step()
-        assertEquals(0.088, rig.power1, 1e-9)
-        assertEquals(0.088, rig.power2, 1e-9)
+        val first = rig.power1
+        assertEquals(first, rig.power2, 0.0)
         rig.speed2 = Double.NaN
         rig.step(20)
-        assertEquals(0.088, rig.power1, 1e-9)
-        assertEquals(0.088, rig.power2, 1e-9)
+        assertEquals(first, rig.power1, 1e-9)
+        assertEquals(first, rig.power2, 1e-9)
     }
 
-    @Test fun `zero gains keep both motors off while the button remains held`() {
+    @Test fun `invalid LQR weights keep both motors off while the button remains held`() {
         val rig = Rig()
         rig.step()
-        for (name in listOf("kP", "kI", "kD", "kF"))
-            ShooterPidTuning::class.java.getField(name).setDouble(null, 0.0)
+        ShooterLqrTuning.rpmTolerance = 0.0
         rig.step(20)
         rig.step(3000)
         assertEquals(0.0, rig.power1, 0.0)
@@ -342,7 +323,7 @@ class ShooterSubsystemTest {
         assertEquals(0.64, rig.power1, 0.0)
         rig.shooter.setManualBlockerOpen(true)
         assertTrue(rig.shooter.blockerOpen)
-        rig.step(20, mode = ControlMode.VELOCITY_PID)
+        rig.step(20, mode = ControlMode.VELOCITY_LQR)
         assertFalse(rig.shooter.blockerOpen)
         rig.shooter.setFlywheelPower(0.0)
         assertEquals(0.0, rig.power1, 0.0)
@@ -354,15 +335,49 @@ class ShooterSubsystemTest {
     }
 
     @Test fun `invalid numeric input never produces NaN motor power`() {
-        ShooterPidTuning.kP = Double.NaN
+        ShooterLqrTuning.kV = Double.NaN
         val rig = Rig()
         rig.step()
         assertEquals(0.0, rig.power1, 0.0)
         assertFalse(rig.shooter.feedReady)
-        restoreGains()
+        restoreModel()
         val badProfile = Rig(0.0, 28.0)
         badProfile.step()
         assertEquals(0.0, badProfile.power1, 0.0)
         assertFalse(badProfile.shooter.feedReady)
     }
+    @Test fun `invalid flywheel one feedback closes previously latched feeding`() {
+        val rig = Rig()
+        rig.rpm(2880.0)
+        rig.step()
+        assertTrue(rig.shooter.feedReady)
+        rig.speed1 = Double.NaN
+        rig.step(20)
+        assertEquals(0.0, rig.power1, 0.0)
+        assertFalse(rig.shooter.feedReady)
+        assertFalse(rig.shooter.blockerOpen)
+    }
+
+    @Test fun `legacy PID mode name delegates to LQR for old autonomous callers`() {
+        val rig = Rig()
+        rig.rpm(2880.0)
+        rig.shooter.updateShot(0.64, ControlMode.VELOCITY_PID)
+        assertEquals(ControlMode.VELOCITY_LQR, rig.shooter.controlMode)
+        assertEquals(ShooterLqrTuning.kV * 2880.0 / 12.0, rig.power1, 1e-9)
+    }
+
+    @Test fun `LQR uses observed interval and resets to nominal interval after release`() {
+        val rig = Rig()
+        rig.rpm(2800.0)
+        rig.step(20)
+        rig.step(66)
+        val oracle = FlywheelLqr()
+        oracle.calculate(2800.0, 2880.0, 0.066, ShooterLqrTuning.snapshot())
+        assertEquals(oracle.feedbackGain, rig.shooter.lqrFeedbackGain, 1e-12)
+        rig.shooter.setFlywheelPower(0.0)
+        rig.step(5000)
+        oracle.calculate(2800.0, 2880.0, 0.020, ShooterLqrTuning.snapshot())
+        assertEquals(oracle.feedbackGain, rig.shooter.lqrFeedbackGain, 1e-12)
+    }
+
 }
