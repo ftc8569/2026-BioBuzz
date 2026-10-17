@@ -11,7 +11,6 @@ import org.firstinspires.ftc.teamcode.Subsytem.IntakeSubsystem
 import org.firstinspires.ftc.teamcode.Subsytem.FieldLocation
 import org.firstinspires.ftc.teamcode.Subsytem.RobotLocationSubsystem
 import org.firstinspires.ftc.teamcode.Subsytem.ShooterSubsystem
-import org.firstinspires.ftc.teamcode.Subsytem.VisionSubsystem
 
 @TeleOp(name = "BioBuzz NextFTC Kotlin TeleOp")
 class BioBuzzTeleOp : NextFTCOpMode() {
@@ -19,7 +18,6 @@ class BioBuzzTeleOp : NextFTCOpMode() {
     private lateinit var intake: IntakeSubsystem
     private lateinit var shooter: ShooterSubsystem
     private lateinit var robotLocation: RobotLocationSubsystem
-    private lateinit var vision: VisionSubsystem
     private lateinit var driveMotors: List<DcMotor>
     private var previousDriveEncoderPositions: IntArray? = null
     private var locationInitialized = false
@@ -41,10 +39,10 @@ class BioBuzzTeleOp : NextFTCOpMode() {
         intake = IntakeSubsystem(hardwareMap)
         shooter = ShooterSubsystem(hardwareMap)
         robotLocation = RobotLocationSubsystem(hardwareMap)
-        vision = VisionSubsystem(hardwareMap)
+        // Camera disabled: do not initialize or register VisionSubsystem.
         addComponents(
             BulkReadComponent,
-            SubsystemComponent(drive, intake, shooter, robotLocation, vision)
+            SubsystemComponent(drive, intake, shooter, robotLocation)
         )
     }
 
@@ -86,7 +84,7 @@ class BioBuzzTeleOp : NextFTCOpMode() {
             rotatingToBlueHive = false
         }
         previousXButtonPressed = gamepad1.x
-        // Gamepad 1 Y retains the branch's shooter-mode toggle.
+        // Gamepad 1 Y is reserved for hold-to-run manual shooting.
         if (gamepad2.y && !previousAimButtonPressed) {
             blueHiveHeading = robotLocation.calculateRotationToBlueHive(location)
             rotatingToBlueHive = blueHiveHeading != null
@@ -147,11 +145,10 @@ class BioBuzzTeleOp : NextFTCOpMode() {
         val dpadDown = gamepad1.dpad_down || gamepad2.dpad_down
         shooterControls.update(gamepad1.y, dpadUp, dpadDown)
 
-        currentShooterPower = when {
-            gamepad1.left_bumper -> -0.8
-            gamepad1.right_bumper -> shooterPreset
-            else -> 0.0
-        }
+        currentShooterPower = shooterControls.requestedPower(
+            reverse = gamepad1.left_bumper,
+            pidShoot = gamepad1.right_bumper
+        )
 
         shooter.setControlMode(shooterMode)
         if (currentShooterPower > 0.0) {
@@ -186,7 +183,7 @@ class BioBuzzTeleOp : NextFTCOpMode() {
         telemetry.addData("Shooter flywheel 1 RPM", "%.0f", shooter.measuredRpm1)
         telemetry.addData("Shooter flywheel 2 RPM", "%.0f", shooter.measuredRpm2)
         telemetry.addData("Shooter preset (G1/G2 up/down)", "%.2f", shooterPreset)
-        telemetry.addData("Shooter mode (G1 Y)", shooterMode)
+        telemetry.addData("Shooter mode (hold G1 Y for manual)", shooterMode)
         telemetry.addData("Shooter speed state", shooter.speedStatus)
         telemetry.addData("D-pad seen (up/down)", "%s / %s", gamepad1.dpad_up || gamepad2.dpad_up, gamepad1.dpad_down || gamepad2.dpad_down)
         telemetry.addData("Shooter requested fraction", "%.2f", currentShooterPower)
@@ -216,7 +213,6 @@ class BioBuzzTeleOp : NextFTCOpMode() {
     }
 
     override fun onStop() {
-        vision.stop()
         drive.stop()
         intake.setPower(0.0)
         shooter.setManualBlockerOpen(false)

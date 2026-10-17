@@ -5,16 +5,26 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class ShooterControlsTest {
-    @Test fun `starts in PID and Y toggles exactly once per press`() {
+    @Test fun `starts in PID and manual shooter runs only while Y is held`() {
         val controls = ShooterControls()
         assertEquals(ControlMode.VELOCITY_PID, controls.mode)
         assertEquals(0.66, controls.preset, 1e-9)
+        assertEquals(0.0, controls.requestedPower(false, false), 1e-9)
+        assertEquals(controls.preset, controls.requestedPower(false, true), 1e-9)
         controls.update(true, false, false)
-        repeat(100) { controls.update(true, false, false) }
+        repeat(100) {
+            controls.update(true, false, false)
+            assertEquals(controls.preset, controls.requestedPower(false, false), 1e-9)
+        }
         assertEquals(ControlMode.MANUAL_POWER, controls.mode)
+        assertEquals(-0.8, controls.requestedPower(true, false), 1e-9)
         controls.update(false, false, false)
-        controls.update(true, false, false)
         assertEquals(ControlMode.VELOCITY_PID, controls.mode)
+        assertEquals(0.0, controls.requestedPower(false, false), 1e-9)
+        assertEquals(controls.preset, controls.requestedPower(false, true), 1e-9)
+        controls.update(true, false, false)
+        assertEquals(ControlMode.MANUAL_POWER, controls.mode)
+        assertEquals(controls.preset, controls.requestedPower(false, false), 1e-9)
         assertEquals(ControlMode.VELOCITY_PID, ShooterControls().mode)
     }
 
