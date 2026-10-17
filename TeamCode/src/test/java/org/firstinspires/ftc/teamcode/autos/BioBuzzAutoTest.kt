@@ -16,7 +16,7 @@ import org.mockito.ArgumentCaptor
 import org.mockito.Mockito.*
 
 class BioBuzzAutoTest {
-    @Test fun `four imported paths collect only on path two then shoot and latch feeding`() {
+    @Test fun `shoots for two seconds after readiness before and after the four paths`() {
         val follower = mock(Follower::class.java)
         val map = mock(HardwareMap::class.java)
         val motors = listOf("shooter1", "shooter2", "intake1", "intake2")
@@ -31,7 +31,8 @@ class BioBuzzAutoTest {
         `when`(map.get(Servo::class.java, "blocker")).thenReturn(blocker)
         `when`(follower.pose()).thenReturn(Pose(0.0, 0.0, 0.0))
         `when`(follower.isBusy).thenReturn(true)
-        val auto = BioBuzzAuto()
+        var now = 0L
+        val auto = BioBuzzAuto { now }
         auto.hardwareMap = map
         auto.telemetry = mock(Telemetry::class.java)
         val gains = doubleArrayOf(ShooterPidTuning.kP, ShooterPidTuning.kI,
@@ -51,6 +52,22 @@ class BioBuzzAutoTest {
             assertEquals(11.461151079136723, initialPose.value.y(), 1e-9)
             assertEquals(Math.PI / 2, initialPose.value.heading(), 1e-9)
             auto.start()
+            auto.loop() // Spin up while stationary: the two-second timer has not started.
+            now = 10_000_000_000L
+            auto.loop()
+            verify(follower, never()).follow(any(Path::class.java))
+            verify(motors.getValue("intake1"), never()).power = 0.70
+            `when`(motors.getValue("shooter1").velocity).thenReturn(3150.0 * 28 / 60)
+            auto.loop() // RPM 1 reaches target; begin the full two seconds of feeding.
+            verify(motors.getValue("intake1")).power = 0.70
+            `when`(motors.getValue("shooter1").velocity).thenReturn(0.0)
+            now += 1_999_000_000L
+            auto.loop() // An RPM dip does not reset feeding or start driving early.
+            verify(follower, never()).follow(any(Path::class.java))
+            now += 1_000_000L
+            auto.loop() // Exactly two seconds: stop shooting and start path 1.
+            verify(follower).follow(any(Path::class.java))
+            clearInvocations(*motors.values.toTypedArray(), blocker)
             auto.loop() // Path 1: no collecting or shooting.
             verify(motors.getValue("intake1"), never()).power = 1.0
             verify(motors.getValue("shooter1"), never()).power = 0.315
@@ -96,6 +113,10 @@ class BioBuzzAutoTest {
                 assertEquals(Math.toRadians((starts[index] + ends[index][2]) / 2),
                     path.heading(0.5), 1e-9)
             }
+            // Final shot has its own timer and must wait for a fresh threshold.
+            now += 10_000_000_000L
+            auto.loop()
+            verify(motors.getValue("intake1"), never()).power = 0.70
             // RPM 2 remains zero: only RPM 1 opens the gate, and feeding stays latched.
             `when`(motors.getValue("shooter1").velocity).thenReturn(3150.0 * 28 / 60)
             auto.loop()
@@ -106,10 +127,20 @@ class BioBuzzAutoTest {
             for (name in listOf("intake1", "intake2"))
                 verify(motors.getValue(name)).power = 0.70
             clearInvocations(*motors.values.toTypedArray(), blocker)
-            auto.stop()
+            now += 1_999_000_000L
+            auto.loop()
+            for (name in listOf("intake1", "intake2"))
+                verify(motors.getValue(name)).power = 0.70
+            clearInvocations(*motors.values.toTypedArray(), blocker, follower)
+            now += 1_000_000L
+            auto.loop() // The final two seconds finish; all outputs stop automatically.
             for (motor in motors.values) verify(motor).power = 0.0
             verify(blocker, atLeastOnce()).position = 0.24
             verify(follower).stop()
+            clearInvocations(*motors.values.toTypedArray(), follower)
+            auto.loop() // Completion cannot restart shooting or the path.
+            verifyNoInteractions(*motors.values.toTypedArray(), follower)
+            auto.stop() // A later Driver Station STOP remains safe.
         } finally {
             ShooterPidTuning.kP = gains[0]
             ShooterPidTuning.kI = gains[1]
