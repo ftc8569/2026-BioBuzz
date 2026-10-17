@@ -43,6 +43,9 @@ class BioBuzzTeleOp : NextFTCOpMode() {
     private var driveEncoderPositions: IntArray? = null
     private lateinit var driveMotors: List<DcMotor>
     private var previousDriveEncoderPositions: IntArray? = null
+    private val driveEncoderDeltas = IntArray(4)
+    private var latestHeadingError: Double? = null
+    private val telemetryRefresh = TelemetryRefresh()
     private var previousXButtonPressed = false
     private var previousAimButtonPressed = false
     private var blueHiveHeading: Double? = null
@@ -131,6 +134,7 @@ class BioBuzzTeleOp : NextFTCOpMode() {
 
     override fun onStartButtonPressed() {
         loopTiming.reset()
+        telemetryRefresh.reset()
         profiler.reset()
         timingRows = emptyList()
         profiler.measure(LoopStage.LOCATION_RESET) { pinpoint.setPose(Pose.zero()) }
@@ -157,11 +161,7 @@ class BioBuzzTeleOp : NextFTCOpMode() {
         profiler.measure(LoopStage.DRIVE_TOTAL) {
             driveEncoderPositions?.let { positions ->
                 val previousPositions = previousDriveEncoderPositions ?: positions
-                if (detailedLogging) profiler.measure(LoopStage.DRIVE_TELEMETRY) {
-                    telemetry.addData("Drive encoder delta (ticks)", "FL %d, FR %d, BL %d, BR %d",
-                        positions[0] - previousPositions[0], positions[1] - previousPositions[1],
-                        positions[2] - previousPositions[2], positions[3] - previousPositions[3])
-                }
+                for (i in driveEncoderDeltas.indices) driveEncoderDeltas[i] = positions[i] - previousPositions[i]
                 previousDriveEncoderPositions = positions
             }
             if (g1.x && !previousXButtonPressed) {
@@ -210,19 +210,19 @@ class BioBuzzTeleOp : NextFTCOpMode() {
             if (!holding) {
                 drive.drive(-g1.left_stick_y.toDouble(), g1.left_stick_x.toDouble(), turn)
             }
-            if (detailedLogging) {
-                profiler.measure(LoopStage.DRIVE_TELEMETRY) {
-                    telemetry.addData("Robot X (in)", location.xInches)
-                    telemetry.addData("Robot Y (in)", location.yInches)
-                    telemetry.addData("Robot Heading (rad)", location.headingRadians)
-                    telemetry.addData("Blue Hive Heading (rad)",
-                        blueHiveHeading ?: "Press G1 X to save hive, then G2 Y to aim")
-                    telemetry.addData("Turning to Blue Hive",
-                        if (rotatingToBlueHive) "Yes (right stick cancels)" else "No")
-                    headingError?.let { telemetry.addData("Heading Error (rad)", it) }
-                }
-            }
+            latestHeadingError = headingError
         }
+    }
+
+    private fun buildDriveTelemetry() = profiler.measure(LoopStage.DRIVE_TELEMETRY) {
+        telemetry.addData("Drive encoder delta (ticks)", "FL %d, FR %d, BL %d, BR %d",
+            driveEncoderDeltas[0], driveEncoderDeltas[1], driveEncoderDeltas[2], driveEncoderDeltas[3])
+        telemetry.addData("Robot X (in)", location.xInches)
+        telemetry.addData("Robot Y (in)", location.yInches)
+        telemetry.addData("Robot Heading (rad)", location.headingRadians)
+        telemetry.addData("Blue Hive Heading (rad)", blueHiveHeading ?: "Press G1 X to save hive, then G2 Y to aim")
+        telemetry.addData("Turning to Blue Hive", if (rotatingToBlueHive) "Yes (right stick cancels)" else "No")
+        latestHeadingError?.let { telemetry.addData("Heading Error (rad)", it) }
     }
 
     private fun wrapAngle(angle: Double): Double {
@@ -289,6 +289,7 @@ class BioBuzzTeleOp : NextFTCOpMode() {
         computeStartedNanos = null
         hardwareFrame?.commit()
         loopTiming.update()
+        if (!telemetryRefresh.isDue()) return
         if (!detailedLogging) {
             profiler.measure(LoopStage.TELEMETRY_BUILD) {
                 telemetry.addData("Loop interval (ms)", "%.2f", loopTiming.intervalMs)
@@ -298,6 +299,9 @@ class BioBuzzTeleOp : NextFTCOpMode() {
             return
         }
         profiler.measure(LoopStage.TELEMETRY_BUILD) {
+            buildDriveTelemetry()
+            telemetry.addData("LQR interval (ms)", "%.2f", shooter.lqrIntervalMs)
+            telemetry.addData("LQR frequency (Hz)", "%.1f", shooter.lqrFrequencyHz)
             telemetry.addData("Loop interval (ms)", "%.2f", loopTiming.intervalMs)
             telemetry.addData("Loop frequency (Hz)", "%.1f", loopTiming.frequencyHz)
             telemetry.addData("Detailed logging (G1 right-stick click)", "On")
@@ -354,6 +358,7 @@ class BioBuzzTeleOp : NextFTCOpMode() {
             detailedLogging = !detailedLogging
             // Resume deltas from a fresh baseline after diagnostic reads were skipped.
             previousDriveEncoderPositions = null
+            telemetryRefresh.reset()
             telemetry.clearAll()
         }
         previousLoggingButton = pressed

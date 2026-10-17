@@ -7,14 +7,13 @@ import org.firstinspires.ftc.teamcode.Subsytem.ShooterSubsystem
 import org.firstinspires.ftc.teamcode.Subsytem.ShooterSubsystem.ControlMode
 import org.firstinspires.ftc.teamcode.teleop.BlockerFeedDelay
 import org.firstinspires.ftc.teamcode.teleop.FeedControls
-import org.firstinspires.ftc.teamcode.teleop.ShooterControls
 
 /** Hold position and perform right-bumper shooting, finishing after one second of transfer. */
 class ShootCommand @JvmOverloads constructor(
     follower: Follower,
     shooter: ShooterSubsystem,
     intake: IntakeSubsystem,
-    power: Double = ShooterControls().preset,
+    power: Double = ShooterSubsystem.DEFAULT_SHOOTER_PRESET,
     nanoTime: () -> Long = System::nanoTime
 ) : CommandBuilder() {
     init {

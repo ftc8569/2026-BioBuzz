@@ -79,6 +79,36 @@ class ShooterSubsystemTest {
         }
     }
 
+    @Test fun `100 Hz LQR ticks use fresh feedback without repeated mode or telemetry reads`() {
+        val rig = Rig()
+        clearInvocations(rig.motor1, rig.motor2, rig.blocker)
+        val oracle = FlywheelLqr()
+        repeat(100) { index ->
+            val rpm = 2700.0 + index
+            rig.rpm(rpm, 0.0)
+            rig.step(10)
+            val dt = if (index == 0) 0.020 else 0.010
+            val expected = (oracle.calculate(rpm, 2880.0, dt, ShooterLqrTuning.snapshot())!!/12.0).coerceIn(0.0,1.0)
+            assertEquals(expected, rig.power1, 1e-9)
+            assertEquals(expected, rig.power2, 1e-9)
+            assertEquals(rpm, rig.shooter.measuredRpm1, 1e-9)
+            assertEquals(expected, rig.shooter.flywheelPower1, 1e-9)
+            assertEquals(expected, rig.shooter.flywheelPower2, 1e-9)
+            assertEquals(0.78, rig.shooter.blockerCommandedPosition, 0.0)
+            if (index > 0) assertEquals(100.0, rig.shooter.lqrFrequencyHz, 1e-9)
+        }
+        for (motor in listOf(rig.motor1, rig.motor2)) {
+            verify(motor, times(100)).velocity
+            verify(motor, times(100)).currentPosition
+            verify(motor, never()).setMode(any(DcMotor.RunMode::class.java))
+            verify(motor, never()).power
+        }
+        verify(rig.blocker, never()).position
+        rig.shooter.setFlywheelPower(0.0)
+        assertEquals(0.0, rig.shooter.lqrFrequencyHz, 0.0)
+        assertEquals(0.0, rig.shooter.flywheelPower1, 0.0)
+    }
+
     @Test fun `control loops never read voltage sensors`() {
         val rig = Rig()
         repeat(10) {
@@ -117,7 +147,7 @@ class ShooterSubsystemTest {
         clock = 1_000_000_000
         val samples = profiler.snapshotIfDue()!!.associateBy { it.stage }
         assertEquals(3.0, samples.getValue(LoopStage.SHOOTER_ENCODERS).maxMs, 0.0)
-        for (stage in listOf(LoopStage.SHOOTER_OUTPUT, LoopStage.SHOOTER_MODES,
+        for (stage in listOf(LoopStage.SHOOTER_OUTPUT,
                 LoopStage.BLOCKER_OUTPUT, LoopStage.VOLTAGE_POLL)) {
             assertTrue(samples.getValue(stage).calls > 0)
         }
@@ -207,7 +237,7 @@ class ShooterSubsystemTest {
         assertTrue(rig.shooter.speedStatus.startsWith("LQR disabled"))
     }
 
-    @Test fun `transfer latches after RPM one reaches five percent and survives speed drops`() {
+    @Test fun `transfer latches after RPM one reaches one percent and survives speed drops`() {
         val rig = Rig(60.0, 60.0)
         rig.rpm(2735.0, 2880.0)
         rig.step()
@@ -215,11 +245,11 @@ class ShooterSubsystemTest {
         rig.rpm(3025.0, 2880.0)
         rig.step(20)
         assertFalse(rig.shooter.feedReady)
-        rig.rpm(2736.0, 0.0) // Flywheel 2 is ignored; RPM 1 is exactly -5%.
+        rig.rpm(2852.0, 0.0) // Flywheel 2 is ignored; RPM 1 is just inside -1%.
         rig.step(20)
         assertTrue(rig.shooter.feedReady)
         assertTrue(rig.shooter.blockerOpen)
-        rig.rpm(3024.0, 6000.0) // RPM 1 exactly +5%.
+        rig.rpm(2908.0, 6000.0) // RPM 1 just inside +1%.
         rig.step(20)
         assertTrue(rig.shooter.feedReady)
         rig.rpm(2735.0, 2880.0)

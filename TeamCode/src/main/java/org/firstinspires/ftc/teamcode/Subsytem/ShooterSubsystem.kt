@@ -102,9 +102,9 @@ class ShooterSubsystem(
         private set
     var encoderPosition2 = 0
         private set
-    val flywheelPower1: Double get() = if (phasedIo) desiredPower else shooter1.power
-    val flywheelPower2: Double get() = if (phasedIo) desiredPower else shooter2.power
-    val blockerCommandedPosition: Double get() = if (phasedIo) desiredBlockerPosition else blocker.position
+    val flywheelPower1: Double get() = desiredPower
+    val flywheelPower2: Double get() = desiredPower
+    val blockerCommandedPosition: Double get() = desiredBlockerPosition
     var blockerOpen = false
         private set
     var blockerStatus = "Shooter off"
@@ -125,6 +125,9 @@ class ShooterSubsystem(
     private var manualBlockerOpen = false
     private val lqr = FlywheelLqr()
     private var lastLqrUpdateNanos: Long? = null
+    var lqrIntervalMs = 0.0
+        private set
+    val lqrFrequencyHz: Double get() = if (lqrIntervalMs > 0.0) 1000.0 / lqrIntervalMs else 0.0
     private var lastLqrModel: FlywheelLqrConfig? = null
     var lqrFeedbackGain = 0.0
         private set
@@ -136,6 +139,7 @@ class ShooterSubsystem(
     companion object {
         // Application reference for preset -> RPM, not the motor's rated 6000 RPM.
         const val MAX_MOTOR_RPM = (3600.0 / 8.0) * 10.0
+        const val DEFAULT_SHOOTER_PRESET = 0.72
         private const val NOMINAL_VOLTAGE = 12.0
         private const val POWER_SPINUP_NANOS = 3_000_000_000L
         private const val READY_SPEED_FRACTION = 0.01
@@ -186,7 +190,6 @@ class ShooterSubsystem(
         if (spinupStartedNanos == -1L) spinupStartedNanos = now
 
         if (mode == ControlMode.MANUAL_POWER) {
-            setRunWithoutEncoder()
             applyNormalizedPower(clipped)
             feedReady = now - spinupStartedNanos >= POWER_SPINUP_NANOS
             feedReadiness = if (feedReady) "Timed feed ready - speed unverified"
@@ -203,6 +206,7 @@ class ShooterSubsystem(
             lqrModelRead = "kV=${model.kV}, kA=${model.kA}, RPM cost=${model.rpmTolerance}, V cost=${model.voltageTolerance}"
         }
         val previous = lastLqrUpdateNanos
+        lqrIntervalMs = if (previous != null) (now-previous).coerceAtLeast(0L)/1_000_000.0 else 0.0
         val dt = if (previous != null && now > previous) (now-previous)/1_000_000_000.0
             else ShooterLqrTuning.NOMINAL_PERIOD_SECONDS
         lastLqrUpdateNanos = now
@@ -243,7 +247,6 @@ class ShooterSubsystem(
 
     fun setFlywheelPower(power: Double) {
         val clipped = if (power.isFinite()) power.coerceIn(-1.0, 0.0) else 0.0
-        setRunWithoutEncoder()
         applyNormalizedPower(clipped)
         resetSpeedHold()
         readSpeeds()
@@ -276,7 +279,6 @@ class ShooterSubsystem(
     }
 
     private fun stopFlywheels() {
-        setRunWithoutEncoder()
         applyNormalizedPower(0.0)
     }
 
@@ -304,6 +306,7 @@ class ShooterSubsystem(
         spinupStartedNanos = -1L
         targetRpm = 0.0
         lastLqrUpdateNanos = null
+        lqrIntervalMs = 0.0
         lqrFeedbackGain = 0.0
         lqrRequestedVolts = 0.0
         atSpeed = false

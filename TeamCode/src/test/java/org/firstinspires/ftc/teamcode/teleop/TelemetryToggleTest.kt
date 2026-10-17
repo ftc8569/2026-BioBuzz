@@ -29,6 +29,8 @@ class TelemetryToggleTest {
         gamepad2 = Gamepad()
         // Keep report logging off the Android runtime in local JVM tests.
         setField(this, "profiler", LoopProfiler(nanoTime))
+        var displayClock = 0L
+        setField(this, "telemetryRefresh", TelemetryRefresh { displayClock += 50_000_000; displayClock })
     }
 
     @Test fun `right stick click hides non-timing telemetry and holding does not toggle repeatedly`() {

@@ -19,7 +19,7 @@ class ShootCommandTest {
         var now = 0L
         var ready = false
         var power = 0.0
-        val command = ShootCommand(follower, shooter, intake, 0.7) { now }
+        val command = ShootCommand(follower, shooter, intake, nanoTime = { now })
         init {
             `when`(follower.pose()).thenReturn(Pose(0.0, 0.0, 0.0))
             `when`(shooter.feedReady).thenAnswer { ready }
@@ -36,7 +36,7 @@ class ShootCommandTest {
         rig.step(5000)
         assertEquals(0.0, rig.power, 0.0)
         assertFalse(rig.command.done())
-        verify(rig.shooter).updateShot(0.7, ControlMode.VELOCITY_LQR)
+        verify(rig.shooter).updateShot(0.72, ControlMode.VELOCITY_LQR)
         rig.ready = true
         rig.step(6000)
         rig.step(6099)

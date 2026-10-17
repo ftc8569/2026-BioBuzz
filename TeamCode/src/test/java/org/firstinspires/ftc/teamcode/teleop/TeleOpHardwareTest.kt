@@ -41,6 +41,8 @@ class TeleOpHardwareTest {
             op.gamepad1 = Gamepad()
             op.gamepad2 = Gamepad()
             op.telemetry = mock(Telemetry::class.java)
+            var displayClock = 0L
+            set("telemetryRefresh", TelemetryRefresh { displayClock += 50_000_000; displayClock })
             drive = DriveSubsystem(map).also { it.enablePhasedIo() }
             shooter = ShooterSubsystem(map) { 0L }.also { it.enablePhasedIo() }
             val intake = IntakeSubsystem(map).also { it.enablePhasedIo() }
@@ -77,7 +79,7 @@ class TeleOpHardwareTest {
         r.compute()
         r.verifyNoHardware()
         r.op.onUpdate()
-        verify(r.motors[4]).power = org.mockito.AdditionalMatchers.eq(0.695, 1e-9)
+        verify(r.motors[4]).power = org.mockito.AdditionalMatchers.eq(0.72, 1e-9)
         verify(r.servo).position = 0.65
         clearInvocations(*r.motors.toTypedArray(), r.servo)
         // Render again without a frame commit, to prove getters themselves are cache-only.

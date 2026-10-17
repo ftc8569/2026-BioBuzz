@@ -13,6 +13,9 @@ class TeleOpFrameLifecycleTest {
         val events = mutableListOf<String>()
         val op = mock(BioBuzzTeleOp::class.java, withSettings().useConstructor().defaultAnswer(CALLS_REAL_METHODS))
         op.telemetry = mock(Telemetry::class.java)
+        var displayClock = 0L
+        BioBuzzTeleOp::class.java.getDeclaredField("telemetryRefresh").apply { isAccessible = true }
+            .set(op, TelemetryRefresh { displayClock += 50_000_000; displayClock })
         op.gamepad1 = Gamepad()
         op.gamepad2 = Gamepad()
         BioBuzzTeleOp::class.java.getDeclaredField("detailedLogging").apply { isAccessible = true }.set(op, false)
@@ -33,4 +36,32 @@ class TeleOpFrameLifecycleTest {
             assertEquals(listOf("read", "compute", "write", "telemetry", "read", "compute", "write", "telemetry"), events)
         } finally { CommandManager.cancelAll() }
     }
+    @Test fun `telemetry throttling never skips hardware commits or controller updates`() {
+        var reads = 0
+        var writes = 0
+        var updates = 0
+        val op = mock(BioBuzzTeleOp::class.java, withSettings().useConstructor().defaultAnswer(CALLS_REAL_METHODS))
+        op.telemetry = mock(Telemetry::class.java)
+        op.gamepad1 = Gamepad(); op.gamepad2 = Gamepad()
+        BioBuzzTeleOp::class.java.getDeclaredField("detailedLogging").apply { isAccessible = true }.set(op, false)
+        BioBuzzTeleOp::class.java.getDeclaredField("hardwareFrame").apply { isAccessible = true }
+            .set(op, HardwareFrame({ reads++ }, { writes++ }))
+        BioBuzzTeleOp::class.java.getDeclaredField("telemetryRefresh").apply { isAccessible = true }
+            .set(op, TelemetryRefresh { 0L })
+        doNothing().`when`(op).onInit()
+        doReturn(false).`when`(op).opModeInInit()
+        doReturn(false).`when`(op).isStopRequested
+        doReturn(true, true, true, false).`when`(op).opModeIsActive()
+        doNothing().`when`(op).onStop()
+        doAnswer {
+            LambdaCommand("Compute").setIsDone { false }.setUpdate { updates++ }.schedule()
+            null
+        }.`when`(op).onStartButtonPressed()
+        try {
+            op.runOpMode()
+            assertEquals(3, reads); assertEquals(3, updates); assertEquals(3, writes)
+            verify(op.telemetry, times(1)).update()
+        } finally { CommandManager.cancelAll() }
+    }
+
 }
