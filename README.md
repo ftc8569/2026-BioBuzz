@@ -25,6 +25,19 @@ The wrapper is named `gradlew`, not `gradew`. Load and Sloth are paired at 0.3.2
 Load 0.2.4 calls `Project.exec`, which was removed in Gradle 9. See the
 [Sloth installation guide](https://github.com/Dairy-Foundation/Sloth#installation).
 
+## Panels dashboard
+
+TeamCode includes Panels with OpMode control, telemetry, configurable variables,
+graphs, and field drawing. Camera plugins are excluded. The project uses Kotlin
+2.4.10 and FTC SDK 12.0.0 as required by the current
+[Panels setup guide](https://panels.bylazar.com/docs/com.bylazar.docs/Prerequisites/).
+
+Install the full app after this dependency change using
+`./gradlew :TeamCode:installDebug`; a Sloth reload alone cannot install Panels.
+Then connect to the robot Wi-Fi and open <http://192.168.43.1:8001> for a Control
+Hub, or <http://192.168.49.1:8001> for a phone Robot Controller.
+Custom TeleOp telemetry and drawings require calls to the Panels plugin APIs.
+
 ## Welcome!
 This GitHub repository contains the source code that is used to build an Android app to control a *FIRST* Tech Challenge competition robot.  To use this SDK, download/clone the entire project to your local computer.
 

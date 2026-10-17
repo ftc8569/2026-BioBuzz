@@ -54,13 +54,21 @@ kotlin {
 
 repositories {
     maven { url = 'https://repo.dairy.foundation/releases' }
+    maven { url = 'https://mymaven.bylazar.com/releases' }
 }
 
 dependencies {
     implementation project(':FtcRobotController')
     implementation 'dev.nextftc:ftc:1.0.0'
-    implementation 'org.jetbrains.kotlin:kotlin-stdlib:2.3.21'
+    implementation 'org.jetbrains.kotlin:kotlin-stdlib:2.4.10'
     implementation 'dev.frozenmilk.sinister:Sloth:0.3.2'
+    // Panels with individual plugins so camera support remains disabled.
+    implementation 'com.bylazar:panels:1.0.7'
+    implementation 'com.bylazar:opmodecontrol:1.0.5'
+    implementation 'com.bylazar:telemetry:1.0.7'
+    implementation 'com.bylazar:configurables:1.0.7'
+    implementation 'com.bylazar:graph:1.0.6'
+    implementation 'com.bylazar:field:1.0.10'
     testImplementation 'junit:junit:4.13.2'
     testImplementation 'org.mockito:mockito-core:5.14.2'
 }
