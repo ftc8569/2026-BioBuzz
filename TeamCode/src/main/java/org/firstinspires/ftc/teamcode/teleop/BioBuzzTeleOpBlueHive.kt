@@ -19,6 +19,7 @@ class BioBuzzTeleOpBlueHive : NextFTCOpMode() {
     private lateinit var shooter: ShooterSubsystem
     private lateinit var robotLocation: RobotLocationSubsystem
     private lateinit var driveMotors: List<DcMotor>
+    private lateinit var pollenMacro: PollenMacro
     private var previousDriveEncoderPositions: IntArray? = null
     private var locationInitialized = false
     private var previousXButtonPressed = false
@@ -43,6 +44,7 @@ class BioBuzzTeleOpBlueHive : NextFTCOpMode() {
         intake = IntakeSubsystem(hardwareMap)
         shooter = ShooterSubsystem(hardwareMap)
         robotLocation = RobotLocationSubsystem(hardwareMap)
+        pollenMacro = PollenMacro(r = 10.0, loopAmount = 8)
         addComponents(
             BulkReadComponent,
             SubsystemComponent(drive, intake, shooter, robotLocation)

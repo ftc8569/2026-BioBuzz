@@ -29,6 +29,7 @@ class BioBuzzTeleOpRedHive : NextFTCOpMode() {
     private lateinit var shooter: ShooterSubsystem
     private lateinit var robotLocation: RobotLocationSubsystem
     private lateinit var vision: VisionSubsystem
+    private lateinit var pollenMacro: PollenMacro
 
     // The starting position should be set only once, not every update cycle.
     private var locationInitialized = false
@@ -64,6 +65,7 @@ class BioBuzzTeleOpRedHive : NextFTCOpMode() {
         shooter.setControlMode(ShooterSubsystem.ControlMode.MANUAL_POWER)
         robotLocation = RobotLocationSubsystem(hardwareMap)
         vision = VisionSubsystem(hardwareMap)
+        pollenMacro = PollenMacro(r = 10.0, loopAmount = 8)
         addComponents(
             SubsystemComponent(intake, shooter, robotLocation, vision),
             BulkReadComponent
