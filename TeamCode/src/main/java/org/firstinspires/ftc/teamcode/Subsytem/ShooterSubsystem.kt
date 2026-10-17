@@ -8,6 +8,8 @@ import com.qualcomm.robotcore.hardware.VoltageSensor
 import com.qualcomm.robotcore.hardware.Servo
 import dev.nextftc.core.subsystems.Subsystem
 import com.arcrobotics.ftclib.controller.PIDFController
+import org.firstinspires.ftc.teamcode.diagnostics.LoopProfiler
+import org.firstinspires.ftc.teamcode.diagnostics.LoopStage
 import kotlin.math.abs
 
 class ShooterSubsystem(
@@ -19,6 +21,11 @@ class ShooterSubsystem(
     private val shooter1 = hardwareMap.get(DcMotorEx::class.java, "shooter1")
     private val shooter2 = hardwareMap.get(DcMotorEx::class.java, "shooter2")
     internal val batteryVoltage = BatteryVoltageMonitor(hardwareMap.getAll(VoltageSensor::class.java))
+    internal var loopProfiler: LoopProfiler? = null
+        set(value) {
+            field = value
+            batteryVoltage.profiler = value
+        }
     private val blocker = hardwareMap.get(Servo::class.java, "blocker")
 
     // Counts per shaft revolution: the confirmed 1:1 goBILDA profile uses 28.
@@ -93,8 +100,7 @@ class ShooterSubsystem(
         shooter1.zeroPowerBehavior = DcMotor.ZeroPowerBehavior.FLOAT
         shooter2.zeroPowerBehavior = DcMotor.ZeroPowerBehavior.FLOAT
         // FTCLib controls power; encoders supply feedback without a second Hub PID loop.
-        shooter1.mode = DcMotor.RunMode.RUN_WITHOUT_ENCODER
-        shooter2.mode = DcMotor.RunMode.RUN_WITHOUT_ENCODER
+        setRunWithoutEncoder()
         shooter1.power = 0.0
         shooter2.power = 0.0
         updateBlocker()
@@ -129,8 +135,7 @@ class ShooterSubsystem(
         if (spinupStartedNanos == -1L) spinupStartedNanos = now
 
         if (mode == ControlMode.MANUAL_POWER) {
-            shooter1.mode = DcMotor.RunMode.RUN_WITHOUT_ENCODER
-            shooter2.mode = DcMotor.RunMode.RUN_WITHOUT_ENCODER
+            setRunWithoutEncoder()
             applyNormalizedPower(clipped)
             feedReady = now - spinupStartedNanos >= POWER_SPINUP_NANOS
             feedReadiness = if (feedReady) "Timed feed ready - speed unverified"
@@ -153,9 +158,11 @@ class ShooterSubsystem(
         }
 
         // Flywheel 1 is the only PID feedback; both motors receive the same output.
-        val output = if (measuredRpm1.isFinite()) pid.calculate(measuredRpm1, targetRpm) else {
-            pid.reset()
-            0.0
+        val output = timed(LoopStage.SHOOTER_PID) {
+            if (measuredRpm1.isFinite()) pid.calculate(measuredRpm1, targetRpm) else {
+                pid.reset()
+                0.0
+            }
         }
         applyNormalizedPower(if (output.isFinite()) output.coerceAtLeast(0.0) else 0.0)
 
@@ -177,8 +184,7 @@ class ShooterSubsystem(
 
     fun setFlywheelPower(power: Double) {
         val clipped = if (power.isFinite()) power.coerceIn(-1.0, 0.0) else 0.0
-        shooter1.mode = DcMotor.RunMode.RUN_WITHOUT_ENCODER
-        shooter2.mode = DcMotor.RunMode.RUN_WITHOUT_ENCODER
+        setRunWithoutEncoder()
         applyNormalizedPower(clipped)
         resetSpeedHold()
         readSpeeds()
@@ -188,11 +194,13 @@ class ShooterSubsystem(
 
     /** Inputs and PIDF gains express power at 12 V; clamp only after compensation. */
     private fun applyNormalizedPower(power: Double) {
-        val voltage = batteryVoltage.voltage
-        val normalized = if (power.isFinite())
-            (power * (NOMINAL_VOLTAGE / voltage)).coerceIn(-1.0, 1.0) else 0.0
-        shooter1.power = normalized
-        shooter2.power = normalized
+        timed(LoopStage.SHOOTER_OUTPUT) {
+            val voltage = batteryVoltage.voltage
+            val normalized = if (power.isFinite())
+                (power * (NOMINAL_VOLTAGE / voltage)).coerceIn(-1.0, 1.0) else 0.0
+            shooter1.power = normalized
+            shooter2.power = normalized
+        }
     }
 
     private fun applyPidGains(): Boolean {
@@ -217,22 +225,37 @@ class ShooterSubsystem(
         return p > 0 || i > 0 || d > 0 || f > 0
     }
 
+    private inline fun <T> timed(stage: LoopStage, block: () -> T): T {
+        val timing = loopProfiler ?: return block()
+        return timing.measure(stage, block)
+    }
+
+    private fun setRunWithoutEncoder() {
+        timed(LoopStage.SHOOTER_MODES) {
+            shooter1.mode = DcMotor.RunMode.RUN_WITHOUT_ENCODER
+            shooter2.mode = DcMotor.RunMode.RUN_WITHOUT_ENCODER
+        }
+    }
+
     private fun stopFlywheels() {
-        shooter1.mode = DcMotor.RunMode.RUN_WITHOUT_ENCODER
-        shooter2.mode = DcMotor.RunMode.RUN_WITHOUT_ENCODER
-        shooter1.power = 0.0
-        shooter2.power = 0.0
+        setRunWithoutEncoder()
+        timed(LoopStage.SHOOTER_OUTPUT) {
+            shooter1.power = 0.0
+            shooter2.power = 0.0
+        }
     }
 
     private fun readSpeeds() {
-        encoderPosition1 = shooter1.currentPosition
-        encoderPosition2 = shooter2.currentPosition
-        measuredTicksPerSecond1 = abs(shooter1.velocity)
-        measuredTicksPerSecond2 = abs(shooter2.velocity)
-        measuredRpm1 = if (rpmConfigurationValid)
-            measuredTicksPerSecond1 * 60.0 / configuredTicksPerRev1 else Double.NaN
-        measuredRpm2 = if (configuredTicksPerRev2.isFinite() && configuredTicksPerRev2 > 0.0)
-            measuredTicksPerSecond2 * 60.0 / configuredTicksPerRev2 else Double.NaN
+        timed(LoopStage.SHOOTER_ENCODERS) {
+            encoderPosition1 = shooter1.currentPosition
+            encoderPosition2 = shooter2.currentPosition
+            measuredTicksPerSecond1 = abs(shooter1.velocity)
+            measuredTicksPerSecond2 = abs(shooter2.velocity)
+            measuredRpm1 = if (rpmConfigurationValid)
+                measuredTicksPerSecond1 * 60.0 / configuredTicksPerRev1 else Double.NaN
+            measuredRpm2 = if (configuredTicksPerRev2.isFinite() && configuredTicksPerRev2 > 0.0)
+                measuredTicksPerSecond2 * 60.0 / configuredTicksPerRev2 else Double.NaN
+        }
     }
 
     private fun withinTolerance(measuredRpm: Double): Boolean =
@@ -250,14 +273,16 @@ class ShooterSubsystem(
     }
 
     private fun updateBlocker() {
-        val manualOpenAllowed = manualBlockerOpen && controlMode == ControlMode.MANUAL_POWER
-        blockerOpen = manualOpenAllowed || feedReady
-        blockerStatus = when {
-            manualOpenAllowed -> "Manual open"
-            requestedPower > 0.0 -> feedReadiness
-            manualBlockerOpen -> "Manual override disabled in PID"
-            else -> "Shooter off"
+        timed(LoopStage.BLOCKER_OUTPUT) {
+            val manualOpenAllowed = manualBlockerOpen && controlMode == ControlMode.MANUAL_POWER
+            blockerOpen = manualOpenAllowed || feedReady
+            blockerStatus = when {
+                manualOpenAllowed -> "Manual open"
+                requestedPower > 0.0 -> feedReadiness
+                manualBlockerOpen -> "Manual override disabled in PID"
+                else -> "Shooter off"
+            }
+            blocker.position = if (blockerOpen) BLOCKER_OPEN else BLOCKER_CLOSED
         }
-        blocker.position = if (blockerOpen) BLOCKER_OPEN else BLOCKER_CLOSED
     }
 }

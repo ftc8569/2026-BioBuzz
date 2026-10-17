@@ -10,6 +10,8 @@ import com.qualcomm.robotcore.hardware.configuration.typecontainers.MotorConfigu
 import org.firstinspires.ftc.teamcode.hardware.BioBuzzShooterMotor
 import org.firstinspires.ftc.teamcode.Subsytem.ShooterSubsystem.ControlMode
 import org.firstinspires.ftc.teamcode.teleop.FeedControls
+import org.firstinspires.ftc.teamcode.diagnostics.LoopProfiler
+import org.firstinspires.ftc.teamcode.diagnostics.LoopStage
 import org.junit.After
 import org.junit.Before
 import org.junit.Assert.*
@@ -105,6 +107,26 @@ class ShooterSubsystemTest {
         rig.shooter.batteryVoltage.pollOnce()
         rig.shooter.updateShot(0.5, ControlMode.MANUAL_POWER)
         assertEquals(0.5 * 12.0 / 14.0, rig.power1, 1e-9)
+    }
+
+    @Test fun `profiling captures shooter hardware reads without adding voltage reads`() {
+        val rig = Rig()
+        var clock = 0L
+        val profiler = LoopProfiler { clock }
+        rig.shooter.loopProfiler = profiler
+        `when`(rig.motor1.currentPosition).thenAnswer { clock += 3_000_000; 0 }
+        rig.shooter.updateShot(0.5, ControlMode.MANUAL_POWER)
+        assertEquals(0.5, rig.power1, 0.0)
+        assertEquals(0, rig.voltageReads)
+        // The worker uses the same profiler, with an explicitly separate background stage.
+        rig.shooter.batteryVoltage.pollOnce()
+        clock = 1_000_000_000
+        val samples = profiler.snapshotIfDue()!!.associateBy { it.stage }
+        assertEquals(3.0, samples.getValue(LoopStage.SHOOTER_ENCODERS).maxMs, 0.0)
+        for (stage in listOf(LoopStage.SHOOTER_OUTPUT, LoopStage.SHOOTER_MODES,
+                LoopStage.BLOCKER_OUTPUT, LoopStage.VOLTAGE_POLL)) {
+            assertTrue(samples.getValue(stage).calls > 0)
+        }
     }
 
     @Test fun `PID output tracks battery voltage without changing RPM target`() {

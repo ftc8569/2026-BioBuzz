@@ -1,6 +1,8 @@
 package org.firstinspires.ftc.teamcode.Subsytem
 
 import com.qualcomm.robotcore.hardware.VoltageSensor
+import org.firstinspires.ftc.teamcode.diagnostics.LoopProfiler
+import org.firstinspires.ftc.teamcode.diagnostics.LoopStage
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.TimeUnit
@@ -9,6 +11,7 @@ import java.util.concurrent.TimeUnit
 internal class BatteryVoltageMonitor(private val sensors: List<VoltageSensor>) : AutoCloseable {
     @Volatile var voltage = 12.0
         private set
+    @Volatile internal var profiler: LoopProfiler? = null
     private var executor: ScheduledExecutorService? = null
     private var closed = false
 
@@ -22,6 +25,11 @@ internal class BatteryVoltageMonitor(private val sensors: List<VoltageSensor>) :
     }
 
     internal fun pollOnce() {
+        val timing = profiler
+        if (timing == null) readVoltage() else timing.measure(LoopStage.VOLTAGE_POLL) { readVoltage() }
+    }
+
+    private fun readVoltage() {
         var minimum = Double.POSITIVE_INFINITY
         for (sensor in sensors) {
             if (Thread.currentThread().isInterrupted) return

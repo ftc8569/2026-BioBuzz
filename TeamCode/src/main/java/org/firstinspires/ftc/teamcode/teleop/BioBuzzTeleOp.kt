@@ -5,8 +5,15 @@ import com.bylazar.telemetry.PanelsTelemetry
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp
 import com.pedropathing.math.Pose
 import org.firstinspires.ftc.teamcode.pedro.Constants
+import org.firstinspires.ftc.robotcore.external.Telemetry
+import java.util.Locale
+import com.qualcomm.robotcore.util.RobotLog
+import dev.nextftc.core.components.Component
+import org.firstinspires.ftc.teamcode.diagnostics.LoopProfiler
+import org.firstinspires.ftc.teamcode.diagnostics.LoopStage
 import com.qualcomm.robotcore.hardware.DcMotor
 import dev.nextftc.core.commands.utility.LambdaCommand
+import dev.nextftc.core.commands.CommandManager
 import dev.nextftc.core.components.SubsystemComponent
 import dev.nextftc.ftc.NextFTCOpMode
 import dev.nextftc.ftc.components.BulkReadComponent
@@ -30,6 +37,10 @@ class BioBuzzTeleOp : NextFTCOpMode() {
     private var previousAimButtonPressed = false
     private var blueHiveHeading: Double? = null
     private var rotatingToBlueHive = false
+    private var detailedLogging = true
+    private var previousLoggingButton = false
+    private val profiler = LoopProfiler()
+    private var timingRows: List<Pair<String, String>> = emptyList()
     private val loopTiming = LoopTiming()
     private val blockerFeedDelay = BlockerFeedDelay()
     private val driveIntakeControls = DriveIntakeControls()
@@ -38,6 +49,26 @@ class BioBuzzTeleOp : NextFTCOpMode() {
     private val shooterMode: ShooterSubsystem.ControlMode get() = shooterControls.mode
     private var currentShooterPower = 0.0
     private var currentIntakePower = 0.0
+
+    init {
+        // NextFTC 1.0.0 runs CommandManager explicitly before onUpdate AND through
+        // its default component's postUpdate. Keep the explicit pass and preserve
+        // all other manager lifecycle hooks through delegation.
+        val defaultComponents = components.toList()
+        (components as MutableSet<Component>).clear()
+        addComponents(
+            object : Component {
+                override fun preUpdate() = profiler.beginLoop()
+                override fun postUpdate() = profiler.endLoop()
+            },
+            *defaultComponents.map { component ->
+                if (component === CommandManager) object : Component by component {
+                    override fun postUpdate() = Unit
+                } else component
+            }.toTypedArray()
+        )
+        // The timer is first, so reverse postUpdate ordering ends it last.
+    }
 
     override fun runOpMode() {
         try {
@@ -48,13 +79,17 @@ class BioBuzzTeleOp : NextFTCOpMode() {
     }
 
     override fun onInit() {
-        telemetry = JoinedTelemetry(telemetry, PanelsTelemetry.ftcTelemetry)
+        telemetry = JoinedTelemetry(
+            timedTelemetry(telemetry, LoopStage.DS_TELEMETRY_UPDATE),
+            timedTelemetry(PanelsTelemetry.ftcTelemetry, LoopStage.PANELS_TELEMETRY_UPDATE)
+        )
         telemetry.setMsTransmissionInterval(50)
         drive = DriveSubsystem(hardwareMap)
         driveMotors = listOf("driveFL", "driveFR", "driveBL", "driveBR")
             .map { hardwareMap.get(DcMotor::class.java, it) }
         intake = IntakeSubsystem(hardwareMap)
         shooter = ShooterSubsystem(hardwareMap)
+        shooter.loopProfiler = profiler
         robotLocation = RobotLocationSubsystem(hardwareMap)
         // Initialize Pedro last so both Pinpoint readers use the Pedro calibration.
         shootingDriveHold = ShootingDriveHold(Constants.create(hardwareMap))
@@ -67,6 +102,8 @@ class BioBuzzTeleOp : NextFTCOpMode() {
 
     override fun onStartButtonPressed() {
         loopTiming.reset()
+        profiler.reset()
+        timingRows = emptyList()
         LambdaCommand("Driver control")
             .setIsDone { false }
             .setUpdate { updateDrive() }
@@ -87,67 +124,88 @@ class BioBuzzTeleOp : NextFTCOpMode() {
     }
 
     private fun updateDrive() {
-        if (!locationInitialized) {
-            robotLocation.setStartingLocation(FieldLocation(0.0, 0.0, 0.0))
-            locationInitialized = true
-        }
-        val positions = driveMotors.map { it.currentPosition }.toIntArray()
-        val previousPositions = previousDriveEncoderPositions ?: positions
-        telemetry.addData("Drive encoder delta (ticks)", "FL %d, FR %d, BL %d, BR %d",
-            positions[0] - previousPositions[0], positions[1] - previousPositions[1],
-            positions[2] - previousPositions[2], positions[3] - previousPositions[3])
-        previousDriveEncoderPositions = positions
-        val location = robotLocation.getLocation()
-        if (gamepad1.x && !previousXButtonPressed) {
-            robotLocation.updateHiveLocation()
-            blueHiveHeading = null
-            rotatingToBlueHive = false
-        }
-        previousXButtonPressed = gamepad1.x
-        // Gamepad 1 Y is reserved for hold-to-run manual shooting.
-        if (gamepad2.y && !previousAimButtonPressed) {
-            blueHiveHeading = robotLocation.calculateRotationToBlueHive(location)
-            rotatingToBlueHive = blueHiveHeading != null
-        }
-        previousAimButtonPressed = gamepad2.y
-        val manualTurn = gamepad1.right_stick_x.toDouble()
-        var turn = manualTurn
-        var headingError: Double? = null
-        if (kotlin.math.abs(manualTurn) > 0.05) {
-            rotatingToBlueHive = false
-        } else if (rotatingToBlueHive) {
-            val targetHeading = blueHiveHeading
-            if (targetHeading == null) {
+        profiler.measure(LoopStage.DRIVE_TOTAL) {
+            if (!locationInitialized) {
+                profiler.measure(LoopStage.LOCATION_RESET) {
+                    robotLocation.setStartingLocation(FieldLocation(0.0, 0.0, 0.0))
+                }
+                locationInitialized = true
+            }
+            if (detailedLogging) {
+                val positions = profiler.measure(LoopStage.DRIVE_ENCODERS) {
+                    driveMotors.map { it.currentPosition }.toIntArray()
+                }
+                val previousPositions = previousDriveEncoderPositions ?: positions
+                profiler.measure(LoopStage.DRIVE_TELEMETRY) {
+                    telemetry.addData("Drive encoder delta (ticks)", "FL %d, FR %d, BL %d, BR %d",
+                        positions[0] - previousPositions[0], positions[1] - previousPositions[1],
+                        positions[2] - previousPositions[2], positions[3] - previousPositions[3])
+                }
+                previousDriveEncoderPositions = positions
+            }
+            val location = profiler.measure(LoopStage.PINPOINT) { robotLocation.getLocation() }
+            if (gamepad1.x && !previousXButtonPressed) {
+                profiler.measure(LoopStage.HIVE_SAVE) { robotLocation.updateHiveLocation() }
+                blueHiveHeading = null
                 rotatingToBlueHive = false
-            } else {
-                headingError = wrapAngle(targetHeading - location.headingRadians)
-                if (kotlin.math.abs(headingError) <= HEADING_TOLERANCE_RADIANS) {
+            }
+            previousXButtonPressed = gamepad1.x
+            // Gamepad 1 Y is reserved for hold-to-run manual shooting.
+            if (gamepad2.y && !previousAimButtonPressed) {
+                blueHiveHeading = robotLocation.calculateRotationToBlueHive(location)
+                rotatingToBlueHive = blueHiveHeading != null
+            }
+            previousAimButtonPressed = gamepad2.y
+            val manualTurn = gamepad1.right_stick_x.toDouble()
+            var turn = manualTurn
+            var headingError: Double? = null
+            if (kotlin.math.abs(manualTurn) > 0.05) {
+                rotatingToBlueHive = false
+            } else if (rotatingToBlueHive) {
+                val targetHeading = blueHiveHeading
+                if (targetHeading == null) {
                     rotatingToBlueHive = false
                 } else {
-                    val correction = (-TURN_GAIN * headingError)
-                        .coerceIn(-MAX_AUTO_TURN, MAX_AUTO_TURN)
-                    turn = if (kotlin.math.abs(correction) < MIN_AUTO_TURN)
-                        kotlin.math.sign(correction) * MIN_AUTO_TURN else correction
+                    headingError = wrapAngle(targetHeading - location.headingRadians)
+                    if (kotlin.math.abs(headingError) <= HEADING_TOLERANCE_RADIANS) {
+                        rotatingToBlueHive = false
+                    } else {
+                        val correction = (-TURN_GAIN * headingError)
+                            .coerceIn(-MAX_AUTO_TURN, MAX_AUTO_TURN)
+                        turn = if (kotlin.math.abs(correction) < MIN_AUTO_TURN)
+                            kotlin.math.sign(correction) * MIN_AUTO_TURN else correction
+                    }
+                }
+            }
+            val shooting = (gamepad1.right_bumper || gamepad1.y) && !gamepad1.left_bumper
+            if (shooting && !shootingDriveHold.active) {
+                profiler.measure(LoopStage.DRIVE_OUTPUT) { drive.stop() }
+                rotatingToBlueHive = false
+            }
+            val holdPose = Pose(location.xInches, location.yInches, location.headingRadians)
+            val holding = if (shooting || shootingDriveHold.active) {
+                profiler.measure(LoopStage.DRIVE_HOLD) { shootingDriveHold.update(shooting, holdPose) }
+            } else {
+                shootingDriveHold.update(shooting, holdPose)
+            }
+            if (!holding) {
+                profiler.measure(LoopStage.DRIVE_OUTPUT) {
+                    drive.drive(-gamepad1.left_stick_y.toDouble(), gamepad1.left_stick_x.toDouble(), turn)
+                }
+            }
+            if (detailedLogging) {
+                profiler.measure(LoopStage.DRIVE_TELEMETRY) {
+                    telemetry.addData("Robot X (in)", location.xInches)
+                    telemetry.addData("Robot Y (in)", location.yInches)
+                    telemetry.addData("Robot Heading (rad)", location.headingRadians)
+                    telemetry.addData("Blue Hive Heading (rad)",
+                        blueHiveHeading ?: "Press G1 X to save hive, then G2 Y to aim")
+                    telemetry.addData("Turning to Blue Hive",
+                        if (rotatingToBlueHive) "Yes (right stick cancels)" else "No")
+                    headingError?.let { telemetry.addData("Heading Error (rad)", it) }
                 }
             }
         }
-        val shooting = (gamepad1.right_bumper || gamepad1.y) && !gamepad1.left_bumper
-        if (shooting && !shootingDriveHold.active) {
-            drive.stop()
-            rotatingToBlueHive = false
-        }
-        if (!shootingDriveHold.update(shooting,
-                Pose(location.xInches, location.yInches, location.headingRadians))) {
-            drive.drive(-gamepad1.left_stick_y.toDouble(), gamepad1.left_stick_x.toDouble(), turn)
-        }
-        telemetry.addData("Robot X (in)", location.xInches)
-        telemetry.addData("Robot Y (in)", location.yInches)
-        telemetry.addData("Robot Heading (rad)", location.headingRadians)
-        telemetry.addData("Blue Hive Heading (rad)",
-            blueHiveHeading ?: "Press G1 X to save hive, then G2 Y to aim")
-        telemetry.addData("Turning to Blue Hive",
-            if (rotatingToBlueHive) "Yes (right stick cancels)" else "No")
-        headingError?.let { telemetry.addData("Heading Error (rad)", it) }
     }
 
     private fun wrapAngle(angle: Double): Double {
@@ -165,91 +223,141 @@ class BioBuzzTeleOp : NextFTCOpMode() {
     }
 
     private fun updateMechanisms() {
-        driveIntakeControls.update(gamepad1.left_stick_button)
-        val dpadUp = gamepad1.dpad_up || gamepad2.dpad_up
-        val dpadDown = gamepad1.dpad_down || gamepad2.dpad_down
-        shooterControls.update(gamepad1.y, dpadUp, dpadDown)
+        profiler.measure(LoopStage.MECHANISMS_TOTAL) {
+            driveIntakeControls.update(gamepad1.left_stick_button)
+            val dpadUp = gamepad1.dpad_up || gamepad2.dpad_up
+            val dpadDown = gamepad1.dpad_down || gamepad2.dpad_down
+            shooterControls.update(gamepad1.y, dpadUp, dpadDown)
 
-        currentShooterPower = shooterControls.requestedPower(
-            reverse = gamepad1.left_bumper,
-            pidShoot = gamepad1.right_bumper
-        )
+            currentShooterPower = shooterControls.requestedPower(
+                reverse = gamepad1.left_bumper,
+                pidShoot = gamepad1.right_bumper
+            )
 
-        shooter.setControlMode(shooterMode)
-        if (currentShooterPower > 0.0) {
-            shooter.updateShot(currentShooterPower, shooterMode)
-        } else {
-            shooter.setFlywheelPower(currentShooterPower)
+            profiler.measure(LoopStage.SHOOTER_CONTROL) {
+                shooter.setControlMode(shooterMode)
+                if (currentShooterPower > 0.0) {
+                    shooter.updateShot(currentShooterPower, shooterMode)
+                } else {
+                    shooter.setFlywheelPower(currentShooterPower)
+                }
+            }
+            val manualBlockerOpen = gamepad1.b || gamepad2.b
+            shooter.setManualBlockerOpen(manualBlockerOpen)
+
+            val manualIntakePower = when {
+                gamepad1.right_trigger > 0.05 -> gamepad1.right_trigger.toDouble()
+                gamepad1.left_trigger > 0.05 -> -gamepad1.left_trigger.toDouble()
+                else -> 0.0
+            }
+
+            currentIntakePower = FeedControls.intakePower(
+                stop = gamepad1.a,
+                manualPower = manualIntakePower,
+                shooterPower = currentShooterPower,
+                preset = 1.0,
+                mode = shooterMode,
+                feedReady = shooter.feedReady,
+                manualBlockerOpen = manualBlockerOpen,
+                minimumPower = driveIntakeControls.minimumPower(drive.commandedPowerMagnitude)
+            )
+
+            currentIntakePower = blockerFeedDelay.apply(currentIntakePower, shooter.blockerOpen)
+            profiler.measure(LoopStage.INTAKE_OUTPUT) { intake.setPower(currentIntakePower) }
         }
-        val manualBlockerOpen = gamepad1.b || gamepad2.b
-        shooter.setManualBlockerOpen(manualBlockerOpen)
-
-        val manualIntakePower = when {
-            gamepad1.right_trigger > 0.05 -> gamepad1.right_trigger.toDouble()
-            gamepad1.left_trigger > 0.05 -> -gamepad1.left_trigger.toDouble()
-            else -> 0.0
-        }
-
-        currentIntakePower = FeedControls.intakePower(
-            stop = gamepad1.a,
-            manualPower = manualIntakePower,
-            shooterPower = currentShooterPower,
-            preset = 1.0,
-            mode = shooterMode,
-            feedReady = shooter.feedReady,
-            manualBlockerOpen = manualBlockerOpen,
-            minimumPower = driveIntakeControls.minimumPower(drive.commandedPowerMagnitude)
-        )
-
-        currentIntakePower = blockerFeedDelay.apply(currentIntakePower, shooter.blockerOpen)
-        intake.setPower(currentIntakePower)
     }
 
     override fun onUpdate() {
+        updateLoggingToggle()
         loopTiming.update()
-        telemetry.addData("Loop interval (ms)", "%.2f", loopTiming.intervalMs)
-        telemetry.addData("Loop frequency (Hz)", "%.1f", loopTiming.frequencyHz)
-        telemetry.addData("Shooting position hold", shootingDriveHold.active)
-        telemetry.addData("Intake Power", currentIntakePower)
-        telemetry.addData("Drive intake assist (G1 left-stick click)", driveIntakeControls.enabled)
-        telemetry.addData("Shooter flywheel 1 RPM", "%.0f", shooter.measuredRpm1)
-        telemetry.addData("Shooter flywheel 2 RPM", "%.0f", shooter.measuredRpm2)
-        val selectedPidTarget = shooterControls.pidTargetRpm
-        if (selectedPidTarget != null) {
-            telemetry.addData("PID target RPM", "%.0f", selectedPidTarget)
-        } else {
-            telemetry.addData("PID target RPM", "Manual mode: no RPM target")
+        if (!detailedLogging) {
+            profiler.measure(LoopStage.TELEMETRY_BUILD) {
+                telemetry.addData("Loop interval (ms)", "%.2f", loopTiming.intervalMs)
+                reportTimings()
+            }
+            profiler.measure(LoopStage.TELEMETRY_UPDATE) { telemetry.update() }
+            return
         }
-        telemetry.addData("PID shooting active", selectedPidTarget != null && currentShooterPower > 0.0)
-        telemetry.addData("PID commanded RPM", "%.0f", shooter.targetRpm)
-        telemetry.addData("PIDF gains (P/I/D/F)", shooter.pidGainsRead)
-        telemetry.addData("PID feedback", "Flywheel 1 RPM (shared motor power)")
-        telemetry.addData("Shooter preset (G1/G2 up/down)", "%.3f", shooterPreset)
-        telemetry.addData("Shooter mode (hold G1 Y for manual)", shooterMode)
-        telemetry.addData("Shooter speed state", shooter.speedStatus)
-        telemetry.addData("D-pad seen (up/down)", "%s / %s", gamepad1.dpad_up || gamepad2.dpad_up, gamepad1.dpad_down || gamepad2.dpad_down)
-        telemetry.addData("Shooter requested fraction", "%.2f", currentShooterPower)
-        telemetry.addData("Shooter motor power 1 / 2", "%.2f / %.2f", shooter.flywheelPower1, shooter.flywheelPower2)
-        telemetry.addData("Manual blocker (G1/G2 B)", gamepad1.b || gamepad2.b)
-        telemetry.addData("Blocker open", shooter.blockerOpen)
-        telemetry.addData("Flywheel 1 within 5 percent of target", shooter.atSpeed)
-        telemetry.addData("Automatic feed ready", shooter.feedReady)
-        telemetry.addData("Feed readiness", shooter.feedReadiness)
-        telemetry.addData("Blocker status", shooter.blockerStatus)
-        telemetry.addData("Blocker commanded position", "%.2f", shooter.blockerCommandedPosition)
-        telemetry.addData("Shooter preset reference RPM", "%.0f", ShooterSubsystem.MAX_MOTOR_RPM)
-        telemetry.addData("RPM configuration valid", shooter.rpmConfigurationValid)
-        telemetry.addData("Raw ticks/s 1 / 2", "%.0f / %.0f",
-            shooter.measuredTicksPerSecond1, shooter.measuredTicksPerSecond2)
-        telemetry.addData("Encoder position ticks 1 / 2", "%d / %d",
-            shooter.encoderPosition1, shooter.encoderPosition2)
-        telemetry.addData("PID target ticks/s 1 / 2", "%.0f / %.0f",
-            shooter.targetTicksPerSecond1, shooter.targetTicksPerSecond2)
-        telemetry.addData("Motor config ticks/rev 1 / 2", "%.0f / %.0f",
-            shooter.configuredTicksPerRev1, shooter.configuredTicksPerRev2)
-        telemetry.addData("Motor config max ticks/s 1 / 2", "%.0f / %.0f",
-            shooter.configuredMaxTicksPerSecond1, shooter.configuredMaxTicksPerSecond2)
-        telemetry.update()
+        profiler.measure(LoopStage.TELEMETRY_BUILD) {
+            telemetry.addData("Loop interval (ms)", "%.2f", loopTiming.intervalMs)
+            telemetry.addData("Loop frequency (Hz)", "%.1f", loopTiming.frequencyHz)
+            telemetry.addData("Detailed logging (G1 right-stick click)", "On")
+            telemetry.addData("Shooting position hold", shootingDriveHold.active)
+            telemetry.addData("Intake Power", currentIntakePower)
+            telemetry.addData("Drive intake assist (G1 left-stick click)", driveIntakeControls.enabled)
+            telemetry.addData("Shooter flywheel 1 RPM", "%.0f", shooter.measuredRpm1)
+            telemetry.addData("Shooter flywheel 2 RPM", "%.0f", shooter.measuredRpm2)
+            val selectedPidTarget = shooterControls.pidTargetRpm
+            if (selectedPidTarget != null) {
+                telemetry.addData("PID target RPM", "%.0f", selectedPidTarget)
+            } else {
+                telemetry.addData("PID target RPM", "Manual mode: no RPM target")
+            }
+            telemetry.addData("PID shooting active", selectedPidTarget != null && currentShooterPower > 0.0)
+            telemetry.addData("PID commanded RPM", "%.0f", shooter.targetRpm)
+            telemetry.addData("PIDF gains (P/I/D/F)", shooter.pidGainsRead)
+            telemetry.addData("PID feedback", "Flywheel 1 RPM (shared motor power)")
+            telemetry.addData("Shooter preset (G1/G2 up/down)", "%.3f", shooterPreset)
+            telemetry.addData("Shooter mode (hold G1 Y for manual)", shooterMode)
+            telemetry.addData("Shooter speed state", shooter.speedStatus)
+            telemetry.addData("D-pad seen (up/down)", "%s / %s", gamepad1.dpad_up || gamepad2.dpad_up, gamepad1.dpad_down || gamepad2.dpad_down)
+            telemetry.addData("Shooter requested fraction", "%.2f", currentShooterPower)
+            telemetry.addData("Shooter motor power 1 / 2", "%.2f / %.2f", shooter.flywheelPower1, shooter.flywheelPower2)
+            telemetry.addData("Manual blocker (G1/G2 B)", gamepad1.b || gamepad2.b)
+            telemetry.addData("Blocker open", shooter.blockerOpen)
+            telemetry.addData("Flywheel 1 within 5 percent of target", shooter.atSpeed)
+            telemetry.addData("Automatic feed ready", shooter.feedReady)
+            telemetry.addData("Feed readiness", shooter.feedReadiness)
+            telemetry.addData("Blocker status", shooter.blockerStatus)
+            telemetry.addData("Blocker commanded position", "%.2f", shooter.blockerCommandedPosition)
+            telemetry.addData("Shooter preset reference RPM", "%.0f", ShooterSubsystem.MAX_MOTOR_RPM)
+            telemetry.addData("RPM configuration valid", shooter.rpmConfigurationValid)
+            telemetry.addData("Raw ticks/s 1 / 2", "%.0f / %.0f",
+                shooter.measuredTicksPerSecond1, shooter.measuredTicksPerSecond2)
+            telemetry.addData("Encoder position ticks 1 / 2", "%d / %d",
+                shooter.encoderPosition1, shooter.encoderPosition2)
+            telemetry.addData("PID target ticks/s 1 / 2", "%.0f / %.0f",
+                shooter.targetTicksPerSecond1, shooter.targetTicksPerSecond2)
+            telemetry.addData("Motor config ticks/rev 1 / 2", "%.0f / %.0f",
+                shooter.configuredTicksPerRev1, shooter.configuredTicksPerRev2)
+            telemetry.addData("Motor config max ticks/s 1 / 2", "%.0f / %.0f",
+                shooter.configuredMaxTicksPerSecond1, shooter.configuredMaxTicksPerSecond2)
+            reportTimings()
+        }
+        profiler.measure(LoopStage.TELEMETRY_UPDATE) { telemetry.update() }
+    }
+
+    private fun updateLoggingToggle() {
+        val pressed = gamepad1.right_stick_button
+        if (pressed && !previousLoggingButton) {
+            detailedLogging = !detailedLogging
+            // Resume deltas from a fresh baseline after diagnostic reads were skipped.
+            previousDriveEncoderPositions = null
+            telemetry.clearAll()
+        }
+        previousLoggingButton = pressed
+    }
+
+    private fun timedTelemetry(delegate: Telemetry, stage: LoopStage): Telemetry =
+        object : Telemetry by delegate {
+            override fun update(): Boolean = profiler.measure(stage) { delegate.update() }
+        }
+
+    private fun reportTimings() {
+        profiler.measure(LoopStage.TIMING_REPORT) {
+            profiler.snapshotIfDue()?.let { samples ->
+                val byStage = samples.associateBy { it.stage }
+                timingRows = LoopStage.entries.map { stage ->
+                    val sample = byStage[stage]
+                    "Timing: ${stage.label}" to if (sample == null) "not called in this window" else
+                        String.format(Locale.US, "avg=%.3f ms max=%.3f ms n=%d",
+                            sample.averageMs, sample.maxMs, sample.calls)
+                }
+                RobotLog.ii("BioBuzzLoop", timingRows.joinToString("; ") { "${it.first}: ${it.second}" })
+            }
+            // Reuse formatted strings between reports. Totals include their child stages.
+            for ((label, value) in timingRows) telemetry.addData(label, value)
+        }
     }
 
     override fun onStop() {
