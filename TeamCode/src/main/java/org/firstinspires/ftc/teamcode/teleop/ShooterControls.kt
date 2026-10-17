@@ -2,10 +2,11 @@ package org.firstinspires.ftc.teamcode.teleop
 
 import org.firstinspires.ftc.teamcode.Subsytem.ShooterSubsystem.ControlMode
 import org.firstinspires.ftc.teamcode.Subsytem.ShooterSubsystem
+import kotlin.math.roundToInt
 
 /** Hold Y for manual shooting; preset adjustments happen once per D-pad press. */
 internal class ShooterControls {
-    private var presetSteps = 139
+    private var presetSteps = (ShooterSubsystem.DEFAULT_SHOOTER_PRESET / 0.005).roundToInt()
     val preset: Double get() = presetSteps * 0.005
     var mode = ControlMode.VELOCITY_PID
         private set

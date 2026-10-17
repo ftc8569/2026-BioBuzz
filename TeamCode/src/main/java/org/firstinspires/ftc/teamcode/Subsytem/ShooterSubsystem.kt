@@ -87,6 +87,7 @@ class ShooterSubsystem(
     companion object {
         // Application reference for preset -> RPM, not the motor's rated 6000 RPM.
         const val MAX_MOTOR_RPM = (3600.0 / 8.0) * 10.0
+        const val DEFAULT_SHOOTER_PRESET = 0.72
         private const val NOMINAL_VOLTAGE = 12.0
         private const val POWER_SPINUP_NANOS = 3_000_000_000L
         private const val READY_SPEED_FRACTION = 0.01

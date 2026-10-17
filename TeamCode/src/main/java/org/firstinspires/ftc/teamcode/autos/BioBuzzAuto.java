@@ -20,7 +20,7 @@ import org.firstinspires.ftc.teamcode.teleop.TelemetryRefresh;
 /** Shoot while stationary, follow pedro paths/basicred.pp, then stop. */
 @Autonomous(name = "BasicRed Auto")
 public class BioBuzzAuto extends OpMode {
-    private static final double SHOOTER_PRESET = 0.695;
+    private static final double SHOOTER_PRESET = ShooterSubsystem.DEFAULT_SHOOTER_PRESET;
     private static final long FEED_DURATION_NANOS = 2_000_000_000L;
     private enum Stage { INITIAL_SHOT, DRIVING, DONE }
     private Stage stage = Stage.DONE;

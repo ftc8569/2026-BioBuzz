@@ -15,14 +15,14 @@ its output to motor power between 0 and 1 after normalizing for battery voltage 
 
 ## RPM and transfer
 
-Default preset: 0.695. Target: `0.695 * 4500 = 3127.5 RPM`.
+Default preset: 0.72. Target: `0.72 * 4500 = 3240 RPM`.
 The confirmed goBILDA 1:1 gearbox uses 28 encoder counts per output revolution:
 `actual RPM = abs(encoder ticks/second) * 60 / 28`.
 The active configuration selects `BioBuzzShooter1To1` for both shooters.
 
 While PIDF shooting, forward transfer and the blocker latch on once **flywheel 1
-RPM** enters **99% to 101% of target** (3096.225 through 3158.775 RPM at the default
-3127.5 RPM target). They remain enabled through later speed drops. The latch
+RPM** enters **99% to 101% of target** (3207.6 through 3272.4 RPM at the default
+3240 RPM target). They remain enabled through later speed drops. The latch
 resets on release, reverse, mode/preset changes, or disabled PID gains. Current
 at-speed telemetry still reports the actual RPM band independently of the latch.
 B and forward trigger cannot bypass the initial speed check. A stops intake

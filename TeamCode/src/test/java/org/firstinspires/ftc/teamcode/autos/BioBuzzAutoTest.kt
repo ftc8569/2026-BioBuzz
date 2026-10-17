@@ -73,13 +73,13 @@ class BioBuzzAutoTest {
             now = 10_000_000_000L
             auto.loop()
             verify(follower, never()).follow(any(Path::class.java))
-            // P-only test gains expose the exact 0.695 * 4500 RPM target as power.
+            // P-only test gains expose the exact 0.72 * 4500 RPM target as power.
             for (name in listOf("shooter1", "shooter2"))
-                verify(motors.getValue(name), atLeastOnce()).power = doubleThat { abs(it - 0.31275) < 1e-9 }
-            verify(motors.getValue("intake1"), never()).power = 0.695
-            `when`(motors.getValue("shooter1").velocity).thenReturn(3127.5 * 28 / 60)
+                verify(motors.getValue(name), atLeastOnce()).power = doubleThat { abs(it - 0.324) < 1e-9 }
+            verify(motors.getValue("intake1"), never()).power = 0.72
+            `when`(motors.getValue("shooter1").velocity).thenReturn(3240.0 * 28 / 60)
             auto.loop() // RPM 1 reaches target; begin the full two seconds of feeding.
-            verify(motors.getValue("intake1")).power = 0.695
+            verify(motors.getValue("intake1")).power = 0.72
             `when`(motors.getValue("shooter1").velocity).thenReturn(0.0)
             now += 1_999_000_000L
             auto.loop() // An RPM dip does not reset feeding or start driving early.
