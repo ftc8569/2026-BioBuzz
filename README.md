@@ -40,6 +40,12 @@ BioBuzz TeleOp sends its telemetry to both the Driver Station and Panels,
 including shooter target RPM, measured RPM, motor power, and feed readiness.
 Custom drawings require calls to the Panels field plugin API.
 
+## Robot configuration
+
+[TeamCode/robot-configs/BioBuzz.xml](TeamCode/robot-configs/BioBuzz.xml) matches
+the robot's active configuration with the webcam and Limelight entries removed.
+TeamCode has no camera subsystem or custom camera calibration resources.
+
 ## Welcome!
 This GitHub repository contains the source code that is used to build an Android app to control a *FIRST* Tech Challenge competition robot.  To use this SDK, download/clone the entire project to your local computer.
 

@@ -42,7 +42,6 @@ class BioBuzzTeleOp : NextFTCOpMode() {
         intake = IntakeSubsystem(hardwareMap)
         shooter = ShooterSubsystem(hardwareMap)
         robotLocation = RobotLocationSubsystem(hardwareMap)
-        // Camera disabled: do not initialize or register VisionSubsystem.
         addComponents(
             BulkReadComponent,
             SubsystemComponent(drive, intake, shooter, robotLocation)
