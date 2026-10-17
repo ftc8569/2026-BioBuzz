@@ -198,7 +198,7 @@ class ShooterSubsystemTest {
         assertFalse(rig.shooter.blockerOpen)
     }
 
-    @Test fun `transfer latches after RPM one reaches five percent and survives speed drops`() {
+    @Test fun `transfer latches after RPM one reaches one percent and survives speed drops`() {
         val rig = Rig(60.0, 60.0)
         rig.rpm(2735.0, 2880.0)
         rig.step()
@@ -206,11 +206,11 @@ class ShooterSubsystemTest {
         rig.rpm(3025.0, 2880.0)
         rig.step(20)
         assertFalse(rig.shooter.feedReady)
-        rig.rpm(2736.0, 0.0) // Flywheel 2 is ignored; RPM 1 is exactly -5%.
+        rig.rpm(2852.0, 0.0) // Flywheel 2 is ignored; RPM 1 is just inside -1%.
         rig.step(20)
         assertTrue(rig.shooter.feedReady)
         assertTrue(rig.shooter.blockerOpen)
-        rig.rpm(3024.0, 6000.0) // RPM 1 exactly +5%.
+        rig.rpm(2908.0, 6000.0) // RPM 1 just inside +1%.
         rig.step(20)
         assertTrue(rig.shooter.feedReady)
         rig.rpm(2735.0, 2880.0)

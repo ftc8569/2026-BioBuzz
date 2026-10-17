@@ -7,6 +7,7 @@ import org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit
 import org.firstinspires.ftc.robotcore.external.navigation.Pose2D
 
 import dev.nextftc.core.subsystems.Subsystem
+import org.firstinspires.ftc.teamcode.pedro.Constants
 
 data class FieldLocation(
     // X and Y describe where the robot is on the field. Heading describes the
@@ -21,23 +22,24 @@ data class FieldLocation(
  * pod and the Y pod is the strafe pod.
  */
 data class PinpointCalibration(
-    // These offsets describe where the Pinpoint tracking pods are mounted
-    // relative to the robot's tracking point. Measure them on the real robot.
-    val xPodOffsetMillimeters: Double = -80.0,
-    val yPodOffsetMillimeters: Double = -157.475,
+    // Share Pedro's tuned mounting values, converting its configured units to millimeters.
+    val xPodOffsetMillimeters: Double = DistanceUnit.MM.fromUnit(
+        Constants.localizerConfig.offsetUnits.get(), Constants.localizerConfig.xPodOffset.get()),
+    val yPodOffsetMillimeters: Double = DistanceUnit.MM.fromUnit(
+        Constants.localizerConfig.offsetUnits.get(), Constants.localizerConfig.yPodOffset.get()),
 
     // This tells Pinpoint which kind of odometry pod is installed. Different
     // pod types produce different encoder counts for the same distance.
     val podType: GoBildaPinpointDriver.GoBildaOdometryPods =
-        GoBildaPinpointDriver.GoBildaOdometryPods.goBILDA_4_BAR_POD,
+        Constants.localizerConfig.podType.get(),
 
     // Positive encoder directions should be checked on the real robot:
     // forward motion should increase the X pod, and left motion should
     // increase the Y pod.
     val xDirection: GoBildaPinpointDriver.EncoderDirection =
-        GoBildaPinpointDriver.EncoderDirection.FORWARD,
+        Constants.localizerConfig.xPodDirection.get(),
     val yDirection: GoBildaPinpointDriver.EncoderDirection =
-        GoBildaPinpointDriver.EncoderDirection.FORWARD
+        Constants.localizerConfig.yPodDirection.get()
 ) {
     init {
         // A calibration value must be a real number, not infinity or NaN.

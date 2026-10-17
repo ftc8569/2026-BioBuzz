@@ -3,7 +3,7 @@
 The shooter uses [FTCLib PIDFController](https://docs.ftclib.org/ftclib/features/controllers),
 one controller using flywheel 1 RPM for both motors. There is no custom PID calculation or second Hub
 velocity loop. Each robot loop calls `calculate(flywheel1Rpm, targetRpm)` and clamps
-its output to motor power between 0 and 1.
+its output to motor power between 0 and 1 after normalizing for battery voltage at 12 V.
 
 ## Controls
 
@@ -11,24 +11,24 @@ its output to motor power between 0 and 1.
 - Hold gamepad 1 Y: manual power, taking priority over right bumper.
 - Release both: stop the shooter and automatic transfer.
 - Left bumper: reverse, taking priority over shooting.
-- Either D-pad up/down: adjust the preset by 0.01.
+- Either D-pad up/down: adjust the preset by 0.005.
 
 ## RPM and transfer
 
-Default preset: 0.74. Target: `0.74 * 4500 = 3330 RPM`.
+Default preset: 0.695. Target: `0.695 * 4500 = 3127.5 RPM`.
 The confirmed goBILDA 1:1 gearbox uses 28 encoder counts per output revolution:
 `actual RPM = abs(encoder ticks/second) * 60 / 28`.
 The active configuration selects `BioBuzzShooter1To1` for both shooters.
 
 While PIDF shooting, forward transfer and the blocker latch on once **flywheel 1
-RPM** enters **95% to 105% of target** (3163.5 through 3496.5 RPM at the default
-3330 RPM target). They remain enabled through later speed drops. The latch
+RPM** enters **99% to 101% of target** (3096.225 through 3158.775 RPM at the default
+3127.5 RPM target). They remain enabled through later speed drops. The latch
 resets on release, reverse, mode/preset changes, or disabled PID gains. Current
 at-speed telemetry still reports the actual RPM band independently of the latch.
 B and forward trigger cannot bypass the initial speed check. A stops intake
 while held; reverse remains available to clear jams.
 
-Manual mode preserves raw power, its three-second feed timer, and the B blocker
+Manual mode preserves voltage-normalized power, its three-second feed timer, and the B blocker
 override. Releasing Y stops manual shooting.
 
 ## Panels tuning
@@ -37,10 +37,10 @@ Open Panels > **Configurables** > **ShooterPidTuning**:
 
 | Field | Initial value |
 | --- | --- |
-| kP | 0.002 |
-| kI | 0.00007 |
-| kD | 0 |
-| kF | 0.000212 |
+| kP | 0.004 |
+| kI | 0 |
+| kD | 0.00001 |
+| kF | 0.000203 |
 
 Gains use RPM, seconds, and motor power; they are
 not the Hub's built-in velocity coefficient units. These are starting values,
@@ -66,5 +66,5 @@ Agents must not install, deploy, launch, or run anything on the robot.
 ./gradlew :TeamCode:testDebugUnitTest :TeamCode:assembleDebug
 ```
 
-Host checks verify controls, RPM conversion, live gain edits, and the 5% transfer
+Host checks verify controls, RPM conversion, live gain edits, and the 1% transfer
 gate. They do not verify physical tuning or shooting performance.

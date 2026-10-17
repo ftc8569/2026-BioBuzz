@@ -232,7 +232,7 @@ class BioBuzzTeleOp : NextFTCOpMode() {
         telemetry.addData("Shooter motor power 1 / 2", "%.2f / %.2f", shooter.flywheelPower1, shooter.flywheelPower2)
         telemetry.addData("Manual blocker (G1/G2 B)", gamepad1.b || gamepad2.b)
         telemetry.addData("Blocker open", shooter.blockerOpen)
-        telemetry.addData("Flywheel 1 within 5 percent of target", shooter.atSpeed)
+        telemetry.addData("Flywheel 1 within 1 percent of target", shooter.atSpeed)
         telemetry.addData("Automatic feed ready", shooter.feedReady)
         telemetry.addData("Feed readiness", shooter.feedReadiness)
         telemetry.addData("Blocker status", shooter.blockerStatus)

@@ -40,8 +40,7 @@ public class Constants {
     public static PinpointConfig localizerConfig = new PinpointConfig(c -> {
         c.name.set("pinpoint");
         c.podType.set(GoBildaPinpointDriver.GoBildaOdometryPods.goBILDA_4_BAR_POD);
-        // Decode offsets (-80 mm, -157.475 mm) converted to inches.
-        // TODO: confirm with PinpointTuner and paste its generated config over this one.
+        // Tuned Pinpoint offsets from the manual-shooter branch, in inches.
         c.xPodOffset.set(1.8827563007985515);
         c.yPodOffset.set(-5.472809799074189);
         c.xPodDirection.set(GoBildaPinpointDriver.EncoderDirection.FORWARD);
@@ -50,7 +49,7 @@ public class Constants {
         c.offsetUnits.set(DistanceUnit.INCH);
     });
 
-    // TODO: every value below is a PLACEHOLDER. Run ForesightTuner and paste its generated config here.
+    // Tuned Foresight settings from the manual-shooter branch.
     public static ForesightConfig foresightConfig = new ForesightConfig(
             c -> {
                 Controller primaryTranslationalForward = Controller.proportional(0.28906605721852313);
