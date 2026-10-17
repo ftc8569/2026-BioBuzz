@@ -24,7 +24,7 @@ class IntakeSubsystem(hardwareMap: HardwareMap) : Subsystem {
             }
         }
     }
-    internal fun forceStop() { desiredPower = 0.0; commitOutputs(force = true) }
+    fun forceStop() { desiredPower = 0.0; commitOutputs(force = true) }
 
     init {
         // Reverse both motor polarities while preserving logical forward/reverse controls.

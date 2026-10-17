@@ -66,7 +66,7 @@ class ShooterSubsystem(
         }
     }
 
-    internal fun forceStop() {
+    fun forceStop() {
         resetSpeedHold()
         manualBlockerOpen = false
         blockerOpen = false

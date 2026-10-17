@@ -1,5 +1,6 @@
 package org.firstinspires.ftc.teamcode.autos
 
+import com.pedropathing.drivetrain.Drivetrain
 import com.pedropathing.follower.Follower
 import com.pedropathing.math.Pose
 import com.pedropathing.paths.Path
@@ -27,10 +28,12 @@ class BioBuzzAutoTest {
 
     private fun verifyBasicAuto(blue: Boolean) {
         val follower = mock(Follower::class.java)
+        Follower::class.java.getField("drivetrain").apply { isAccessible = true }
+            .set(follower, mock(Drivetrain::class.java))
         val map = mock(HardwareMap::class.java)
         val hub = mock(LynxModule::class.java)
         `when`(map.getAll(LynxModule::class.java)).thenReturn(listOf(hub))
-        val motors = listOf("shooter1", "shooter2", "intake1", "intake2")
+        val motors = listOf("driveFL", "driveFR", "driveBL", "driveBR", "shooter1", "shooter2", "intake1", "intake2")
             .associateWith { mock(DcMotorEx::class.java) }
         val blocker = mock(Servo::class.java)
         val profile = mock(MotorConfigurationType::class.java)
@@ -67,7 +70,7 @@ class BioBuzzAutoTest {
             verify(follower).setPose(initialPose.capture())
             assertEquals(startX, initialPose.value.x(), 1e-9)
             assertEquals(startY, initialPose.value.y(), 1e-9)
-            assertEquals(Math.PI / 2, initialPose.value.heading(), 1e-9)
+            assertEquals(pathHeading, initialPose.value.heading(), 1e-9)
             auto.start()
             auto.loop() // Spin up while stationary: the two-second timer has not started.
             now = 10_000_000_000L
@@ -95,8 +98,13 @@ class BioBuzzAutoTest {
             assertEquals(startY, path.get(0.0).y(), 1e-9)
             assertEquals(endX, path.endPose().x(), 1e-9)
             assertEquals(endY, path.endPose().y(), 1e-9)
-            for (t in listOf(0.0, 0.5, 1.0))
+            // Heading must match the initial pose: no 180-degree turn when driving begins.
+            for (t in listOf(0.0, 0.25, 0.5, 0.75, 1.0)) {
+                assertEquals(initialPose.value.heading(), path.heading(t), 1e-9)
                 assertEquals(pathHeading, path.heading(t), 1e-9)
+                assertEquals(startX + (endX - startX) * t, path.get(t).x(), 1e-9)
+                assertEquals(startY + (endY - startY) * t, path.get(t).y(), 1e-9)
+            }
             // During the entire path the mechanisms stay off; no second shot is started.
             clearInvocations(*motors.values.toTypedArray(), blocker)
             repeat(3) { now += 1_000_000_000L; auto.loop() }
@@ -105,7 +113,7 @@ class BioBuzzAutoTest {
             clearInvocations(follower)
             `when`(follower.isBusy).thenReturn(false)
             auto.loop()
-            for (motor in motors.values) verify(motor).power = 0.0
+            for (motor in motors.values) verify(motor, atLeastOnce()).power = 0.0
             verify(blocker, atLeastOnce()).position = 0.78
             verify(follower).stop()
             verify(hub, atLeastOnce()).clearBulkCache()
