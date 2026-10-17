@@ -1,6 +1,7 @@
 package org.firstinspires.ftc.teamcode.teleop
 
 import org.firstinspires.ftc.teamcode.Subsytem.ShooterSubsystem.ControlMode
+import org.firstinspires.ftc.teamcode.Subsytem.ShooterSubsystem
 
 /** Hold Y for manual shooting; preset adjustments happen once per D-pad press. */
 internal class ShooterControls {
@@ -8,6 +9,9 @@ internal class ShooterControls {
     val preset: Double get() = presetSteps * 0.02
     var mode = ControlMode.VELOCITY_PID
         private set
+    val pidTargetRpm: Double?
+        get() = if (mode == ControlMode.VELOCITY_PID)
+            preset * ShooterSubsystem.MAX_MOTOR_RPM else null
     private var previousUp = false
     private var previousDown = false
 

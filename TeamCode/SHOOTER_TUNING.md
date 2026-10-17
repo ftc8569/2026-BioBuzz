@@ -2,6 +2,12 @@
 
 ## Target and units
 
+Telemetry shows **PID target RPM** from the selected preset, including while
+idle. **PID commanded RPM** is the controller's active target (zero when off),
+and **PID shooting active** indicates a forward PID shooting command. In manual
+mode the PID target is labeled as unused. Hold gamepad 1 right bumper for PID;
+holding Y runs manual power.
+
 The shooter now starts in PID at 64%. It uses the supplied full-speed calculation:
 
 ```text

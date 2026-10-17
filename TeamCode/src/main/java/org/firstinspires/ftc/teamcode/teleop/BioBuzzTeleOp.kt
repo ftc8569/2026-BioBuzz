@@ -184,6 +184,14 @@ class BioBuzzTeleOp : NextFTCOpMode() {
         telemetry.addData("Intake Power", currentIntakePower)
         telemetry.addData("Shooter flywheel 1 RPM", "%.0f", shooter.measuredRpm1)
         telemetry.addData("Shooter flywheel 2 RPM", "%.0f", shooter.measuredRpm2)
+        val selectedPidTarget = shooterControls.pidTargetRpm
+        if (selectedPidTarget != null) {
+            telemetry.addData("PID target RPM", "%.0f", selectedPidTarget)
+        } else {
+            telemetry.addData("PID target RPM", "Manual mode: no RPM target")
+        }
+        telemetry.addData("PID shooting active", selectedPidTarget != null && currentShooterPower > 0.0)
+        telemetry.addData("PID commanded RPM", "%.0f", shooter.targetRpm)
         telemetry.addData("Shooter preset (G1/G2 up/down)", "%.2f", shooterPreset)
         telemetry.addData("Shooter mode (hold G1 Y for manual)", shooterMode)
         telemetry.addData("Shooter speed state", shooter.speedStatus)
@@ -199,7 +207,6 @@ class BioBuzzTeleOp : NextFTCOpMode() {
         telemetry.addData("Blocker status", shooter.blockerStatus)
         telemetry.addData("Blocker commanded position", "%.2f", shooter.blockerCommandedPosition)
         telemetry.addData("Shooter preset reference RPM", "%.0f", ShooterSubsystem.MAX_MOTOR_RPM)
-        telemetry.addData("PID target RPM", "%.0f", shooter.targetRpm)
         telemetry.addData("RPM configuration valid", shooter.rpmConfigurationValid)
         telemetry.addData("Raw ticks/s 1 / 2", "%.0f / %.0f",
             shooter.measuredTicksPerSecond1, shooter.measuredTicksPerSecond2)
