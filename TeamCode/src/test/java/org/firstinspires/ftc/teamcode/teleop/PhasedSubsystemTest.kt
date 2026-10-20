@@ -2,7 +2,8 @@ package org.firstinspires.ftc.teamcode.teleop
 
 import com.qualcomm.robotcore.hardware.*
 import com.qualcomm.robotcore.hardware.configuration.typecontainers.MotorConfigurationType
-import org.firstinspires.ftc.teamcode.Subsytem.*
+import org.firstinspires.ftc.teamcode.control.ShooterController
+import org.firstinspires.ftc.teamcode.subsystems.*
 import org.junit.Assert.*
 import org.junit.Test
 import org.mockito.Mockito.*
@@ -51,11 +52,11 @@ class PhasedSubsystemTest {
         verify(m1).velocity
         verify(m2).velocity
         clearInvocations(m1, m2, servo)
-        shooter.setControlMode(ShooterSubsystem.ControlMode.MANUAL_POWER)
-        shooter.updateShot(0.5, ShooterSubsystem.ControlMode.MANUAL_POWER)
+        shooter.setControlMode(ShooterController.ControlMode.MANUAL_POWER)
+        shooter.updateShot(0.5, ShooterController.ControlMode.MANUAL_POWER)
         shooter.setManualBlockerOpen(true)
-        assertEquals(0.5, shooter.flywheelPower1, 0.0)
-        assertEquals(0.65, shooter.blockerCommandedPosition, 0.0)
+        assertEquals(0.5, shooter.flywheelPower, 0.0)
+        assertEquals(0.65, shooter.control.blockerPosition, 0.0)
         verifyNoInteractions(m1, m2, servo)
         shooter.commitOutputs()
         verify(m1).power = 0.5
@@ -104,14 +105,14 @@ class PhasedSubsystemTest {
         `when`(m1.velocity).thenReturn(200.0)
         shooter.batteryVoltage.pollOnce() // Simulate the worker changing its cache mid-frame.
         clearInvocations(m1, m2, servo, voltage)
-        shooter.updateShot(0.5, ShooterSubsystem.ControlMode.MANUAL_POWER)
-        assertEquals(100.0, shooter.measuredTicksPerSecond1, 0.0)
+        shooter.updateShot(0.5, ShooterController.ControlMode.MANUAL_POWER)
+        assertEquals(100.0, shooter.wheels[0].ticksPerSecond, 0.0)
         verifyNoInteractions(m1, m2, servo, voltage)
         shooter.commitOutputs()
         verify(m1).power = 0.5
         shooter.beginFrame()
-        shooter.updateShot(0.5, ShooterSubsystem.ControlMode.MANUAL_POWER)
-        assertEquals(200.0, shooter.measuredTicksPerSecond1, 0.0)
+        shooter.updateShot(0.5, ShooterController.ControlMode.MANUAL_POWER)
+        assertEquals(200.0, shooter.wheels[0].ticksPerSecond, 0.0)
         shooter.commitOutputs()
         verify(m1).power = 0.6
     }

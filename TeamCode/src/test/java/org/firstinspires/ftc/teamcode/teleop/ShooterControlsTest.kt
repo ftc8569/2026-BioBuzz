@@ -1,11 +1,12 @@
 package org.firstinspires.ftc.teamcode.teleop
 
-import org.firstinspires.ftc.teamcode.Subsytem.ShooterSubsystem.ControlMode
+import org.firstinspires.ftc.teamcode.control.ShooterController.ControlMode
+import org.firstinspires.ftc.teamcode.control.ShooterControls
 import org.junit.Assert.*
 import org.junit.Test
 
 class ShooterControlsTest {
-    @Test fun `PID display target remains selected while idle and tracks preset changes`() {
+    @Test fun `LQR display target remains selected while idle and tracks preset changes`() {
         val controls = ShooterControls()
         assertEquals(0.0, controls.requestedPower(false, false), 0.0)
         assertEquals(3240.0, controls.velocityTargetRpm!!, 1e-9)
@@ -19,7 +20,7 @@ class ShooterControlsTest {
         assertEquals(3262.5, controls.velocityTargetRpm!!, 1e-9)
     }
 
-    @Test fun `starts in PID and manual shooter runs only while Y is held`() {
+    @Test fun `starts in LQR and manual shooter runs only while Y is held`() {
         val controls = ShooterControls()
         assertEquals(ControlMode.VELOCITY_LQR, controls.mode)
         assertEquals(0.72, controls.preset, 1e-9)

@@ -1,6 +1,6 @@
-# BioBuzzTeleOp loop timing
+# Robot loop timing
 
-`BioBuzzTeleOp` measures every call to the major loop sections using a monotonic
+`DriverRobot` measures every call to the major loop sections using a monotonic
 nanosecond clock. It publishes one-second windows in milliseconds:
 
 - Driver Station and Panels telemetry: rows beginning with `Timing:`.
@@ -26,44 +26,43 @@ Robot controls, required localization and shooter feedback, and background
 battery-voltage polling continue normally. Turning details back on restarts drive
 encoder deltas from a fresh baseline without clearing timing statistics.
 
-## Scheduler and total-loop measurement
+## Frame order and total-loop measurement
 
-BioBuzzTeleOp works around duplicate scheduling in the pinned NextFTC 1.0.0:
-its base OpMode explicitly runs the command manager before `onUpdate`, while its
-default manager component would run it again in `postUpdate`. TeleOp wraps that
-component to suppress only the second `postUpdate` pass. Other manager lifecycle
-hooks, including initialization and shutdown, remain delegated to NextFTC.
+`Robot.loop()` calls `DriverRobot.update()`, which reads inputs, computes drive
+and mechanism requests once, commits
+outputs, and publishes telemetry when due. A failed read or computation skips the
+normal output commit and runs shutdown. The total timer includes every phase and
+ends in `finally`; there is no command scheduler or component ordering to manage.
 
-The total timer is the first component: it starts before other pre-update hooks
-and ends after the reverse-order post-update hooks, including bulk-cache clearing.
-Driver and mechanism callback counts should now roughly match the loop count,
-rather than being double it. Counts can differ by one at a reporting-window
-boundary because the snapshot occurs before the current loop has completed.
-A local regression runs the real NextFTC lifecycle with fake command durations
-and checks both single execution and the full measured total. Recheck this
-workaround if the NextFTC dependency is upgraded.
+Local regressions exercise this actual loop with deterministic clocks, and run
+the real Pedro/Foresight controller against hardware doubles. These checks verify
+ordering and calculations, not an achieved hardware loop frequency.
 
 ## What is measured
 
 | Section | Includes |
 | --- | --- |
 | Loop interval | Time between successive loop starts, including between-loop scheduling delays |
-| Loop work total | Work between the NextFTC pre-update and post-update hooks, including reporting and bulk-cache clearing |
+| Loop work total | All work in `DriverRobot.update()`, including input reads, computation, output commits and reporting |
+| Read inputs phase | Hub bulk refresh, shooter samples, optional drive encoders and Pinpoint |
+| Hub bulk read transactions | One refresh per required hub; diagnostics-only hubs are skipped when details are off |
+| Control compute phase | Drive, shooter and intake decisions from captured inputs |
+| Write outputs phase | Final motor and blocker commands |
 | Drive total | The entire driver-control callback, including its nested sections |
-| Drive encoder reads | Four encoder reads and their result array; the first read on a hub can fetch its motor bulk data |
+| Drive encoder reads | Four cached encoder reads and their result array; hub transactions run in the read phase |
 | Pinpoint location read | Normal Pinpoint update and pose conversion |
-| Pinpoint initial pose write | First-loop starting-pose write |
-| Hive save extra Pinpoint read | Extra location read when G1 X saves the hive |
-| Pedro hold update | Shooting hold setup/update or release, including Pedro's second Pinpoint read and drive writes; inactive idle calls excluded |
-| Manual drive motor writes | Normal joystick motor output, plus the stop when entering shooting |
-| Drive telemetry build | Both groups of drive telemetry entries; normally two calls per loop |
+| Pinpoint initial pose write | Starting-pose write at START |
+| Hive save (cached pose) | Reserved timing label; saving the cached pose is included in Drive total |
+| Pedro hold update | Shooting hold computation from the captured pose; writes wait for the output phase |
+| Drive motor output commit | Final joystick/Pedro requests, suppressing unchanged writes |
+| Drive telemetry build | Drive telemetry entries at the display interval |
 | Mechanisms total | The entire shooter/intake callback, including nested sections |
 | Shooter control total | Shooter mode selection and shooting/off/reverse update |
-| Shooter encoder and velocity reads | Both motors' positions and velocities, plus RPM conversion |
-| Shooter PID calculation | FTCLib feedback calculation |
-| Shooter motor mode writes | Both run-mode setter calls; cached SDK calls may perform no hardware transaction |
-| Shooter cached voltage and motor writes | Cached voltage lookup, compensation and motor power writes; includes direct zero-output paths |
-| Blocker update and servo write | Blocker state calculation and servo position setter |
+| Shooter encoder and velocity reads | Both motors' positions and velocities; RPM is derived from these cached values |
+| Shooter LQR calculation | Discrete LQR feedback calculation |
+| Shooter motor mode writes | Reserved timing label; modes are set once during INIT, never rewritten in the active loop |
+| Shooter motor output commit | Cached voltage compensation and final motor writes; unchanged outputs are skipped |
+| Blocker servo output commit | Final blocker position write, skipping unchanged positions |
 | Intake motor writes | Both intake power setters |
 | Main telemetry build and getters | Main telemetry entries, their getters/formatting, and timing reporting |
 | Telemetry update both outputs | JoinedTelemetry update call |
@@ -74,11 +73,27 @@ workaround if the NextFTC dependency is upgraded.
 
 Totals include their child measurements: do **not** add every row together.
 Telemetry update measures the API call, not end-to-end radio/network delivery.
-Motor bulk caching means the first encoder read can bear the cost of fetching
-other motors' data; later reads can be cheap cache accesses. Voltage polling runs
+The explicit hub bulk refresh bears the cost of fetching motor data; subsequent
+encoder and velocity reads use that snapshot. Voltage polling runs
 concurrently, so its duration is **not** part of the main loop's measured work,
 although shared hub communication can still delay main-thread hardware calls.
 
 The profiler holds its counter lock only while recording or copying statistics,
 never while accessing hardware. It is enabled by TeleOp; other OpModes retain
 their existing behavior without per-section profiling.
+
+## Joined display output
+
+`diagnostics/Telemetry.kt` owns the cached shooter renderer and creates one Panels `JoinedTelemetry` for the lifetime
+of the driver object. A 50 ms gate runs before building telemetry, so formatting
+and both destination updates are skipped between display frames. Formatted values
+are built once and sent to both delegates through the value overload. Timing
+strings are cached for one second. Separate timing wrappers preserve the Driver
+Station and Panels update measurements. The display gate never skips a hardware
+frame or a control calculation.
+
+This uses the installed Panels telemetry 1.0.7 source: its formatting overload
+forwards formatting to each delegate, while its value overload accepts an already
+formatted string. FTC's [SDK 12 telemetry example](https://github.com/FIRST-Tech-Challenge/FtcRobotController/blob/v12.0/FtcRobotController/src/main/java/org/firstinspires/ftc/robotcontroller/external/samples/ConceptTelemetry.java)
+explains the transmission interval. Constructor ownership follows Kotlin's
+[class and constructor documentation](https://kotlinlang.org/docs/classes.html).

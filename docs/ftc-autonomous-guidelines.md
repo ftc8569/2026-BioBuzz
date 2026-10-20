@@ -6,15 +6,17 @@ translated against the installed library, rather than copied directly.
 
 ## Lifecycle and failure handling
 
-BasicRed and BasicBlue initialize devices and a route before becoming READY.
-START only arms the stationary shot after READY. The loop advances through the
-measured speed gate, two-second feed, and path following without blocking waits.
+Every match auto uses AutoOpMode to initialize its devices and route before becoming READY.
+START only runs a routine after READY. Basic autos advance through the measured
+speed gate, shared 100 ms blocker delay, two-second feed, and path following
+without blocking waits. The longer routine keeps its one-second feed per shot;
+backup routines drive without shooter initialization.
 A runtime or linkage failure enters FAILED, preserves the original stack trace,
 and displays the phase and exception as `Auto error`. FAILED cannot resume by
 pressing START. Fix the reported cause and reinitialize.
 
 Cleanup attempts each known motor independently, closes the blocker, stops the
-voltage worker, and restores bulk-cache operation. It does not call
+voltage worker, and restores each hub’s previous bulk-cache mode. It does not call
 `follower.update()` to stop: that also polls localization and can fail when the
 Pinpoint is the device that disconnected. Cleanup failures are attached to the
 first error rather than replacing it. An unsuccessful physical hardware write
@@ -58,8 +60,12 @@ Local checks:
 
 The Basic auto tests cover both exported routes and shooting time, real Pedro and
 LQR startup with hardware doubles, missing-device initialization, START failures,
-and a loop fault combined with a failed stop write. Preserve those distinctions
-when interpreting results.
+and a loop fault combined with a failed stop write. AutoLifecycleIntegrationTest also runs all eight match autos with real Pedro code, injecting a Pinpoint failure and failed stop writes. Preserve those distinctions when interpreting results.
+
+DriverControlsIntegrationTest exercises both strafing directions, forward/reverse,
+turning, normalized mixed input, shooting-hold handoff, and saved-hive aiming with
+the real subsystems and Pedro against fake devices. These are local logic checks,
+not confirmation of wheel orientation, encoder wiring or field performance.
 
 ## Primary references reviewed
 
@@ -72,3 +78,16 @@ when interpreting results.
   [heading interpolation](https://pedropathing.com/docs/pathing/reference/interpolation),
   and [debugging](https://pedropathing.com/docs/pathing/guide/debugging).
 - [FIRST control-system troubleshooting](https://ftc-docs.firstinspires.org/en/latest/control_system_troubleshooting/index.html).
+
+## Shared intake and compact TeleOp
+
+`subsystems/IntakeSubsystem.kt` contains `IntakeFeed`, used by Robot, the Basic autos and
+ShootCommand. It applies the same speed gate, 0.6 feed power and 100 ms opening
+delay. Basic feed timing begins when intake power actually starts, keeping two
+full seconds of transfer. The longer routine retains its one-second transfer.
+Manual reverse, stop, collection assist, and the manual-mode blocker override
+remain available in TeleOp. Collection path powers and route coordinates are unchanged.
+
+The direct iterative loop follows the [FTC SDK 12 lifecycle example](https://github.com/FIRST-Tech-Challenge/FtcRobotController/blob/v12.0/FtcRobotController/src/main/java/org/firstinspires/ftc/robotcontroller/external/samples/BasicOpMode_Iterative.java).
+Pedro's [v3.0.1 Follower implementation](https://github.com/Pedro-Pathing/PedroPathing/blob/v3.0.1/core/src/main/java/com/pedropathing/follower/Follower.java)
+confirms why shutdown stops drivetrain outputs directly instead of calling update.

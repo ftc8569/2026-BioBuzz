@@ -22,7 +22,9 @@ class BasicAutoFailureTest {
         val map = mock(HardwareMap::class.java)
         val follower = mock(Follower::class.java)
         val drivetrain = mock(Drivetrain::class.java)
-        val hub = mock(LynxModule::class.java)
+        val hub = mock(LynxModule::class.java).also {
+            `when`(it.bulkCachingMode).thenReturn(LynxModule.BulkCachingMode.AUTO)
+        }
         val motors = listOf("driveFL", "driveFR", "driveBL", "driveBR", "shooter1", "shooter2", "intake1", "intake2")
             .associateWith { mock(DcMotorEx::class.java) }
         val powers = motors.mapValues { 0.5 }.toMutableMap()

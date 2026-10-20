@@ -2,6 +2,57 @@
 
 This repository contains the public FTC SDK for the BIOBUZZ (2026-2027) competition season.
 
+## Start reading the robot code here
+
+The main robot code has **10 files**, excluding autonomous routines and the
+supplied Pedro tuning tools:
+
+| File | Responsibility |
+| --- | --- |
+| `teleop/Robot.kt` | FTC entry point and driver loop |
+| `control/Controllers.kt` | Button state, shot readiness, LQR math and live tuning |
+| `subsystems/DriveSubsystem.kt` | Drive motors and buffered output |
+| `subsystems/IntakeSubsystem.kt` | Intake motors and the shared auto/TeleOp feeding policy |
+| `subsystems/ShooterSubsystem.kt` | Flywheel hardware, cached samples and blocker output |
+| `hardware/RobotHardware.kt` | Constructor wiring, feedback records, Pedro adapters, bulk reads and shutdown |
+| `hardware/BioBuzzShooterMotor.java` | Configured motor profile |
+| `diagnostics/Telemetry.kt` | JoinedTelemetry, display throttling and loop timing |
+| `teleop/Diagnostics.kt` | Existing blocker and shooter diagnostic OpModes |
+| `vision/HiveVision.kt` | Existing hive geometry and Limelight utility |
+
+Each subsystem is about 100 lines. The shooter owns a `ShooterController` object;
+its LQR and readiness logic are shared by autonomous and TeleOp. Dependencies are
+constructed once during INIT and passed into `DriverRobot`. Button edges share
+one helper, and the shooter reuses the loop timer. Shooter status text is derived
+from its state; its telemetry renderer lives in `diagnostics/Telemetry.kt`.
+Team-owned application source is wrapped to 100 columns (supplied Pedro tools
+retain their upstream formatting).
+
+Autos live in `autos/`: `AutoOpMode.java` owns readiness and failure handling;
+`BioBuzzAuto.java` owns Basic shoot-and-park; `BioBuzzRed1_5.java` owns the longer
+routine; `BioBuzzBackupAuto.java` owns backup driving; `Autonomous.kt` groups
+alliance variants and the shared shoot command.
+
+TeleOp retains its existing Driver Station name, **BioBuzz NextFTC Kotlin TeleOp**,
+so drivers can select the same entry. Its implementation now uses the FTC SDK's
+direct `OpMode` loop; NextFTC and FTCLib are no longer dependencies.
+
+All shooting modes use the same **0.6 intake feed power** and **100 ms blocker
+opening delay**. Basic autos feed for two full seconds after that delay; the longer
+auto feeds for one second. Collection stays at its existing requested power.
+Shooter preset remains **0.72**, with the existing LQR tuning and routes.
+
+Local verification only (no robot connection required):
+
+```sh
+./gradlew :TeamCode:testDebugUnitTest :TeamCode:assembleDebug --console=plain
+```
+
+See [autonomous reliability](docs/ftc-autonomous-guidelines.md),
+[shooter control](docs/control/shooter-lqr.md), and
+[loop timing](docs/loop-profiling.md). Robot deployment is prohibited for agent work
+under [AGENTS.md](AGENTS.md).
+
 ## Sloth deployment
 
 Connect the robot through USB or connect to its Wi-Fi and run `adb connect 192.168.43.1:5555`.
@@ -38,6 +89,9 @@ Then connect to the robot Wi-Fi and open <http://192.168.43.1:8001> for a Contro
 Hub, or <http://192.168.49.1:8001> for a phone Robot Controller.
 BioBuzz TeleOp sends its telemetry to both the Driver Station and Panels,
 including shooter target RPM, measured RPM, motor power, and feed readiness.
+One `JoinedTelemetry` instance shares each formatted value between both outputs.
+Display work runs at most every 50 ms; timing strings are rebuilt once per second.
+The hardware/control loop continues on every iteration.
 Custom drawings require calls to the Panels field plugin API.
 
 ## Robot configuration

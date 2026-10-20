@@ -35,7 +35,7 @@ public class Constants {
         c.frontRightName.set("driveFR");
         c.backLeftName.set("driveBL");
         c.backRightName.set("driveBR");
-        // FL and BL reversed; matches BioBuzzTeleOp.kt and Decode. Confirm with MecanumTuner.
+        // FL and BL reversed; matches Robot.kt and Decode. Confirm with MecanumTuner.
         c.frontLeftDirection.set(DcMotorSimple.Direction.REVERSE);
         c.frontRightDirection.set(DcMotorSimple.Direction.FORWARD);
         c.backLeftDirection.set(DcMotorSimple.Direction.REVERSE);

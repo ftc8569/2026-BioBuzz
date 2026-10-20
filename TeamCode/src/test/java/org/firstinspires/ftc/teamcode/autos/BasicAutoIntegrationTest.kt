@@ -63,6 +63,8 @@ class BasicAutoIntegrationTest {
             `when`(motors.getValue("shooter1").velocity).thenReturn(3240.0 * 28.0 / 60.0)
             now += 10_000_000L
             auto.loop()
+            now += 100_000_000L
+            auto.loop()
             now += 2_000_000_000L
             auto.loop()
             auto.loop() // First real Foresight path calculation.

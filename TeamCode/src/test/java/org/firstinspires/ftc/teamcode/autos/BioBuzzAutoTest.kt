@@ -10,13 +10,12 @@ import com.qualcomm.robotcore.hardware.HardwareMap
 import com.qualcomm.robotcore.hardware.Servo
 import com.qualcomm.robotcore.hardware.configuration.typecontainers.MotorConfigurationType
 import org.firstinspires.ftc.robotcore.external.Telemetry
-import org.firstinspires.ftc.teamcode.Subsytem.ShooterLqrTuning
+import org.firstinspires.ftc.teamcode.control.ShooterLqrTuning
 import org.firstinspires.ftc.teamcode.pedro.Constants
 import org.junit.Assert.*
 import org.junit.Test
-import kotlin.math.abs
-import org.mockito.ArgumentMatchers.doubleThat
 import org.mockito.ArgumentCaptor
+import org.mockito.ArgumentMatchers.doubleThat
 import org.mockito.Mockito.*
 
 class BioBuzzAutoTest {
@@ -31,7 +30,9 @@ class BioBuzzAutoTest {
         Follower::class.java.getField("drivetrain").apply { isAccessible = true }
             .set(follower, mock(Drivetrain::class.java))
         val map = mock(HardwareMap::class.java)
-        val hub = mock(LynxModule::class.java)
+        val hub = mock(LynxModule::class.java).also {
+            `when`(it.bulkCachingMode).thenReturn(LynxModule.BulkCachingMode.AUTO)
+        }
         `when`(map.getAll(LynxModule::class.java)).thenReturn(listOf(hub))
         val motors = listOf("driveFL", "driveFR", "driveBL", "driveBR", "shooter1", "shooter2", "intake1", "intake2")
             .associateWith { mock(DcMotorEx::class.java) }
@@ -80,10 +81,13 @@ class BioBuzzAutoTest {
             for (name in listOf("shooter1", "shooter2"))
                 verify(motors.getValue(name), atLeastOnce()).power = doubleThat { it > 0.0 && it <= 1.0 }
             verify(auto.telemetry, atLeastOnce()).addData("Shooter target RPM", 3240.0)
-            verify(motors.getValue("intake1"), never()).power = 0.72
+            verify(motors.getValue("intake1"), never()).power = 0.6
             `when`(motors.getValue("shooter1").velocity).thenReturn(3240.0 * 28 / 60)
-            auto.loop() // RPM 1 reaches target; begin the full two seconds of feeding.
-            verify(motors.getValue("intake1")).power = 0.72
+            auto.loop() // RPM 1 reaches target; allow the blocker to open first.
+            verify(motors.getValue("intake1"), never()).power = 0.6
+            now += 100_000_000L
+            auto.loop() // Begin the full two seconds of feeding.
+            verify(motors.getValue("intake1")).power = 0.6
             `when`(motors.getValue("shooter1").velocity).thenReturn(0.0)
             now += 1_999_000_000L
             auto.loop() // An RPM dip does not reset feeding or start driving early.

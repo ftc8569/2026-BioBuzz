@@ -3,6 +3,7 @@ package org.firstinspires.ftc.teamcode.teleop
 import com.qualcomm.hardware.lynx.LynxModule
 import com.qualcomm.robotcore.hardware.DcMotor
 import com.qualcomm.robotcore.hardware.DcMotorController
+import org.firstinspires.ftc.teamcode.hardware.BulkInputReader
 import org.junit.Test
 import org.mockito.Mockito.*
 

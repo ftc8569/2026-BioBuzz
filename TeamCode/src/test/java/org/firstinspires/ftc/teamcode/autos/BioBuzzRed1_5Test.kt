@@ -1,23 +1,26 @@
 package org.firstinspires.ftc.teamcode.autos
 
 import com.pedropathing.config.ConfigVar
+import com.pedropathing.drivetrain.Drivetrain
 import com.pedropathing.follower.Follower
 import com.pedropathing.ivy.Scheduler
 import com.pedropathing.math.Pose
 import com.pedropathing.paths.Path
+import com.qualcomm.robotcore.hardware.DcMotorEx
 import com.qualcomm.robotcore.hardware.HardwareMap
+import com.qualcomm.robotcore.hardware.Servo
+import kotlin.math.atan2
+import kotlin.math.cos
+import kotlin.math.sin
 import org.firstinspires.ftc.robotcore.external.Telemetry
-import org.firstinspires.ftc.teamcode.Subsytem.IntakeSubsystem
-import org.firstinspires.ftc.teamcode.Subsytem.ShooterSubsystem
-import org.firstinspires.ftc.teamcode.commands.ShootCommand
+import org.firstinspires.ftc.teamcode.autos.ShootCommand
 import org.firstinspires.ftc.teamcode.pedro.Constants
+import org.firstinspires.ftc.teamcode.subsystems.IntakeSubsystem
+import org.firstinspires.ftc.teamcode.subsystems.ShooterSubsystem
 import org.junit.Assert.*
 import org.junit.Test
 import org.mockito.ArgumentMatchers.anyDouble
 import org.mockito.Mockito.*
-import kotlin.math.atan2
-import kotlin.math.cos
-import kotlin.math.sin
 
 class BioBuzzRed1_5Test {
     private class Rig(val auto: BioBuzzRed1_5 = BioBuzzRed1_5()) {
@@ -29,6 +32,11 @@ class BioBuzzRed1_5Test {
         var intakePower = 0.0
         var startPose: Pose? = null
         init {
+            for (name in listOf("driveFL", "driveFR", "driveBL", "driveBR", "shooter1", "shooter2", "intake1", "intake2"))
+                `when`(map.get(DcMotorEx::class.java, name)).thenReturn(mock(DcMotorEx::class.java))
+            `when`(map.get(Servo::class.java, "blocker")).thenReturn(mock(Servo::class.java))
+            Follower::class.java.getField("drivetrain").apply { isAccessible = true }
+                .set(follower, mock(Drivetrain::class.java))
             Follower::class.java.getField("holdEnd").apply { isAccessible = true }
                 .set(follower, ConfigVar.of(true))
             `when`(follower.following()).thenAnswer { following }
@@ -52,6 +60,7 @@ class BioBuzzRed1_5Test {
             mockConstruction(IntakeSubsystem::class.java) { intake, _ ->
                 doAnswer { rig.intakePower = it.getArgument(0); null }
                     .`when`(intake).setPower(anyDouble())
+                doAnswer { rig.intakePower = 0.0; null }.`when`(intake).forceStop()
             }.use {
                 mockConstruction(ShootCommand::class.java) { command, context ->
                     `when`(command.requirements()).thenReturn(emptySet())

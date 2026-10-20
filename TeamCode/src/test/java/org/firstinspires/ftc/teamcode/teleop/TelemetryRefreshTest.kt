@@ -1,5 +1,6 @@
 package org.firstinspires.ftc.teamcode.teleop
 
+import org.firstinspires.ftc.teamcode.diagnostics.TelemetryRefresh
 import org.junit.Assert.*
 import org.junit.Test
 
