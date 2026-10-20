@@ -13,9 +13,10 @@ import org.firstinspires.ftc.teamcode.pedro.Constants
 import org.junit.Assert.*
 import org.junit.Test
 import org.mockito.Mockito.*
+import org.mockito.ArgumentMatchers.anyDouble
 
 class TeleOpHardwareTest {
-    private class Rig {
+    private class Rig(val started: Boolean = true) {
         val map = mock(HardwareMap::class.java)
         val names = listOf("driveFL", "driveFR", "driveBL", "driveBR", "shooter1", "shooter2", "intake1", "intake2")
         val motors = names.map { name -> mock(DcMotorEx::class.java).also {
@@ -53,7 +54,7 @@ class TeleOpHardwareTest {
             val snapshot = field("snapshotLocalizer") as SnapshotLocalizer
             set("shootingDriveHold", ShootingDriveHold(Constants.create(snapshot, BufferedMecanum { p, t -> drive.requestWheelPowers(p,t) })))
             set("hardwareFrame", HardwareFrame({ call("readInputs") }, { call("writeOutputs") }))
-            clearHardware()
+            if (started) { shooter.startBlockerControl(); clearHardware() }
         }
         fun set(name: String, value: Any) = BioBuzzTeleOp::class.java.getDeclaredField(name).apply { isAccessible = true }.set(op, value)
         fun field(name: String): Any = BioBuzzTeleOp::class.java.getDeclaredField(name).apply { isAccessible = true }.get(op)!!
@@ -62,6 +63,25 @@ class TeleOpHardwareTest {
         fun compute() { call("updateDrive"); call("updateMechanisms") }
         fun clearHardware() = clearInvocations(*motors.toTypedArray(), servo, physical, hub)
         fun verifyNoHardware() = verifyNoInteractions(*motors.toTypedArray(), servo, physical, hub)
+    }
+
+    @Test fun `TeleOp setup and STOP before Start never command blocker`() {
+        val r = Rig(started = false)
+        verify(r.servo, never()).setPosition(anyDouble())
+        r.op.onStop()
+        verify(r.servo, never()).setPosition(anyDouble())
+    }
+
+    @Test fun `TeleOp Start closes blocker and normal STOP still closes it`() {
+        val r = Rig(started = false)
+        verify(r.servo, never()).setPosition(anyDouble())
+        try {
+            r.op.onStartButtonPressed()
+            verify(r.servo).position = 0.78
+        } finally {
+            r.op.onStop()
+        }
+        verify(r.servo, atLeast(2)).position = 0.78
     }
 
     @Test fun `hold and hive save share one physical snapshot and computation and telemetry use caches`() {

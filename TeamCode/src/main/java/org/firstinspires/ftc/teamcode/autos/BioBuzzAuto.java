@@ -16,6 +16,7 @@ import org.firstinspires.ftc.teamcode.pedro.Constants;
 import java.util.function.LongSupplier;
 import java.util.List;
 import org.firstinspires.ftc.teamcode.teleop.TelemetryRefresh;
+import org.firstinspires.ftc.teamcode.teleop.BlockerFeedDelay;
 
 /** Shoot while stationary, follow pedro paths/basicred.pp, then stop. */
 @Autonomous(name = "BasicRed Auto")
@@ -26,6 +27,7 @@ public class BioBuzzAuto extends OpMode {
     private Stage stage = Stage.DONE;
     private final LongSupplier nanoTime;
     private long feedingStartedNanos = -1L;
+    private BlockerFeedDelay blockerFeedDelay;
 
     public BioBuzzAuto() {
         this(System::nanoTime);
@@ -68,6 +70,8 @@ public class BioBuzzAuto extends OpMode {
 
     @Override
     public void start() {
+        shooter.startBlockerControl();
+        blockerFeedDelay = new BlockerFeedDelay(nanoTime::getAsLong);
         feedingStartedNanos = -1L;
         stage = Stage.INITIAL_SHOT;
         telemetryRefresh.reset();
@@ -105,11 +109,13 @@ public class BioBuzzAuto extends OpMode {
         telemetry.update();
     }
 
-    /** Spin-up time is excluded: the two-second timer starts at measured readiness. */
+    /** Count two seconds of transfer after spin-up and the blocker-opening delay. */
     private boolean updateShooting() {
         shooter.updateShot(SHOOTER_PRESET, ShooterSubsystem.ControlMode.VELOCITY_LQR);
-        intake.setPower(shooter.getFeedReady() ? SHOOTER_PRESET : 0.0);
-        if (!shooter.getFeedReady()) {
+        double requestedPower = shooter.getFeedReady() ? SHOOTER_PRESET : 0.0;
+        double transferPower = blockerFeedDelay.apply(requestedPower, shooter.getBlockerOpen());
+        intake.setPower(transferPower);
+        if (transferPower <= 0.0) {
             feedingStartedNanos = -1L;
             return false;
         }

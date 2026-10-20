@@ -8,13 +8,20 @@ import com.qualcomm.robotcore.hardware.Servo
 @TeleOp(name = "Blocker Diagnostic", group = "Test")
 class BlockerDiagnosticTeleOp : OpMode() {
     private lateinit var blocker: Servo
+    private var started = false
 
     override fun init() {
         blocker = hardwareMap.get(Servo::class.java, "blocker")
+        started = false
+    }
+
+    override fun start() {
+        started = true
         blocker.position = CLOSED
     }
 
     override fun loop() {
+        if (!started) return
         when {
             gamepad1.a -> blocker.position = CLOSED
             gamepad1.b -> blocker.position = OPEN
@@ -24,7 +31,8 @@ class BlockerDiagnosticTeleOp : OpMode() {
     }
 
     override fun stop() {
-        blocker.position = CLOSED
+        if (started) blocker.position = CLOSED
+        started = false
     }
 
     companion object {

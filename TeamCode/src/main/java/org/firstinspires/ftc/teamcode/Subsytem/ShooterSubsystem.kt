@@ -38,9 +38,20 @@ class ShooterSubsystem(
     private var desiredBlockerPosition = BLOCKER_CLOSED
     private val committedPower = DoubleArray(2) { Double.NaN }
     private var committedBlocker = Double.NaN
+    private var blockerControlStarted = false
 
     /** TeleOp alone opts in; autonomous keeps the same immediate controller API. */
     internal fun enablePhasedIo() { phasedIo = true; forceStop() }
+
+    /** Leave the servo untouched during INIT; close it when the OpMode starts. */
+    fun startBlockerControl() {
+        if (blockerControlStarted) return
+        resetSpeedHold()
+        manualBlockerOpen = false
+        blockerControlStarted = true
+        updateBlocker()
+        if (phasedIo) commitOutputs()
+    }
 
     internal fun beginFrame() {
         frameVoltage = batteryVoltage.voltage
@@ -48,7 +59,7 @@ class ShooterSubsystem(
     }
 
     internal fun commitOutputs(force: Boolean = false) {
-        // A forced stop tries both flywheels AND the blocker, even after a device failure.
+        // Try both flywheels and, after Start, the blocker even after a device failure.
         outputWrites(force, 2) { group ->
             if (group == 0) timed(LoopStage.SHOOTER_OUTPUT) {
                 outputWrites(force, flywheels.size) { i ->
@@ -58,7 +69,7 @@ class ShooterSubsystem(
                     }
                 }
             } else timed(LoopStage.BLOCKER_OUTPUT) {
-                if (force || desiredBlockerPosition != committedBlocker) {
+                if (blockerControlStarted && (force || desiredBlockerPosition != committedBlocker)) {
                     blocker.position = desiredBlockerPosition
                     committedBlocker = desiredBlockerPosition
                 }
@@ -139,7 +150,7 @@ class ShooterSubsystem(
     companion object {
         // Application reference for preset -> RPM, not the motor's rated 6000 RPM.
         const val MAX_MOTOR_RPM = (3600.0 / 8.0) * 10.0
-        const val DEFAULT_SHOOTER_PRESET = 0.72
+        const val DEFAULT_SHOOTER_PRESET = 0.720//0.715
         private const val NOMINAL_VOLTAGE = 12.0
         private const val POWER_SPINUP_NANOS = 3_000_000_000L
         private const val READY_SPEED_FRACTION = 0.01
@@ -324,6 +335,6 @@ class ShooterSubsystem(
             else -> "Shooter off"
         }
         desiredBlockerPosition = if (blockerOpen) BLOCKER_OPEN else BLOCKER_CLOSED
-        if (!phasedIo) timed(LoopStage.BLOCKER_OUTPUT) { blocker.position = desiredBlockerPosition }
+        if (blockerControlStarted && !phasedIo) timed(LoopStage.BLOCKER_OUTPUT) { blocker.position = desiredBlockerPosition }
     }
 }

@@ -1,6 +1,6 @@
 package org.firstinspires.ftc.teamcode.teleop
 
-/** Allow the blocker 100 ms to open before applying forward intake power. */
+/** Allow the blocker 200 ms to open before applying forward intake power. */
 internal class BlockerFeedDelay(private val nanoTime: () -> Long = System::nanoTime) {
     private var openedAt: Long? = null
 
@@ -11,6 +11,6 @@ internal class BlockerFeedDelay(private val nanoTime: () -> Long = System::nanoT
         }
         val now = nanoTime()
         val start = openedAt ?: now.also { openedAt = it }
-        return if (power > 0.0 && now - start < 100_000_000L) 0.0 else power
+        return if (power > 0.0 && now - start < 200_000_000L) 0.0 else power
     }
 }

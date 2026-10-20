@@ -75,6 +75,7 @@ public class BioBuzzRed1_5 extends OpMode {
 
     @Override
     public void start() {
+        shooter.startBlockerControl();
         routine = sequential(
                 new ShootCommand(follower, shooter, intake),
                 followPath(path1, 1.0),

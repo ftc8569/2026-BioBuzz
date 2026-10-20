@@ -39,14 +39,14 @@ class ShootCommandTest {
         verify(rig.shooter).updateShot(0.72, ControlMode.VELOCITY_LQR)
         rig.ready = true
         rig.step(6000)
-        rig.step(6099)
+        rig.step(6199)
         assertEquals(0.0, rig.power, 0.0)
-        rig.step(6100)
+        rig.step(6200)
         assertEquals(1.0, rig.power, 0.0)
-        rig.step(7099)
+        rig.step(7199)
         assertEquals(1.0, rig.power, 0.0)
         assertFalse(rig.command.done())
-        rig.step(7100)
+        rig.step(7200)
         assertTrue(rig.command.done())
         rig.command.end(EndCondition.NATURALLY)
         assertEquals(0.0, rig.power, 0.0)
@@ -58,16 +58,16 @@ class ShootCommandTest {
         val rig = Rig()
         rig.ready = true
         rig.step(0)
-        rig.step(100)
+        rig.step(200)
         assertEquals(1.0, rig.power, 0.0)
         rig.command.end(EndCondition.INTERRUPTED)
         assertEquals(0.0, rig.power, 0.0)
         verify(rig.shooter, atLeastOnce()).setFlywheelPower(0.0)
         rig.command.start()
-        rig.step(100)
+        rig.step(200)
         assertEquals(0.0, rig.power, 0.0)
         assertFalse(rig.command.done())
-        rig.step(200)
+        rig.step(400)
         assertEquals(1.0, rig.power, 0.0)
         assertFalse(rig.command.done())
     }
@@ -75,7 +75,7 @@ class ShootCommandTest {
         val rig = Rig()
         rig.ready = true
         rig.step(0)
-        rig.step(100)
+        rig.step(200)
         rig.step(800)
         assertFalse(rig.command.done())
         rig.ready = false
@@ -83,10 +83,10 @@ class ShootCommandTest {
         assertEquals(0.0, rig.power, 0.0)
         rig.ready = true
         rig.step(1000)
-        rig.step(1100)
-        rig.step(2099)
+        rig.step(1200)
+        rig.step(2199)
         assertFalse(rig.command.done())
-        rig.step(2100)
+        rig.step(2200)
         assertTrue(rig.command.done())
     }
 }

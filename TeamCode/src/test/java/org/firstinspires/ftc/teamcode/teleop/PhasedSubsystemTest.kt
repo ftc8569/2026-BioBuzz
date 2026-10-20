@@ -44,6 +44,7 @@ class PhasedSubsystemTest {
         `when`(map.getAll(VoltageSensor::class.java)).thenReturn(emptyList())
         val shooter = ShooterSubsystem(map) { 0L }
         shooter.enablePhasedIo()
+        shooter.startBlockerControl()
         clearInvocations(m1, m2, servo)
         shooter.beginFrame()
         verify(m1).currentPosition
@@ -98,6 +99,7 @@ class PhasedSubsystemTest {
         `when`(m1.velocity).thenReturn(100.0)
         val shooter = ShooterSubsystem(map) { 0L }
         shooter.enablePhasedIo()
+        shooter.startBlockerControl()
         shooter.batteryVoltage.pollOnce()
         shooter.beginFrame()
         `when`(voltage.voltage).thenReturn(10.0)

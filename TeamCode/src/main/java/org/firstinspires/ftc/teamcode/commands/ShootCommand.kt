@@ -33,6 +33,7 @@ class ShootCommand @JvmOverloads constructor(
             transferStarted = null
             blockerDelay = BlockerFeedDelay(nanoTime)
             stopAll()
+            shooter.startBlockerControl()
             shooter.setControlMode(ControlMode.VELOCITY_LQR)
             follower.hold(follower.pose())
         }

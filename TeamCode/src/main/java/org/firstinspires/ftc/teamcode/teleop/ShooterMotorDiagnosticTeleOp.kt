@@ -14,6 +14,7 @@ class ShooterMotorDiagnosticTeleOp : OpMode() {
     private lateinit var shooter1: DcMotorEx
     private lateinit var shooter2: DcMotorEx
     private lateinit var blocker: Servo
+    private var started = false
     private var previousCacheModes = emptyMap<LynxModule, LynxModule.BulkCachingMode>()
     private var initialPosition1 = 0
     private var initialPosition2 = 0
@@ -41,10 +42,16 @@ class ShooterMotorDiagnosticTeleOp : OpMode() {
         shooter2.power = 0.0
         initialPosition1 = shooter1.currentPosition
         initialPosition2 = shooter2.currentPosition
+        started = false
+    }
+
+    override fun start() {
+        started = true
         blocker.position = 0.24
     }
 
     override fun loop() {
+        if (!started) return
         // Hold X or Y for one motor, B for both. Right trigger raises power to 0.80.
         val power = 0.25 + 0.55 * gamepad1.right_trigger.toDouble().coerceIn(0.0, 1.0)
         shooter1.power = if (gamepad1.x || gamepad1.b) power else 0.0
@@ -75,7 +82,8 @@ class ShooterMotorDiagnosticTeleOp : OpMode() {
     override fun stop() {
         shooter1.power = 0.0
         shooter2.power = 0.0
-        blocker.position = 0.24
+        if (started) blocker.position = 0.24
+        started = false
         previousCacheModes.forEach { (hub, mode) ->
             hub.clearBulkCache()
             hub.bulkCachingMode = mode

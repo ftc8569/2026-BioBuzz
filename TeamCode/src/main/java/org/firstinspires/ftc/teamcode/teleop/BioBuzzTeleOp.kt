@@ -133,6 +133,7 @@ class BioBuzzTeleOp : NextFTCOpMode() {
     }
 
     override fun onStartButtonPressed() {
+        shooter.startBlockerControl()
         loopTiming.reset()
         telemetryRefresh.reset()
         profiler.reset()
@@ -272,7 +273,7 @@ class BioBuzzTeleOp : NextFTCOpMode() {
                 stop = g1.a,
                 manualPower = manualIntakePower,
                 shooterPower = currentShooterPower,
-                preset = 0.6,
+                preset = 1.0,
                 mode = shooterMode,
                 feedReady = shooter.feedReady,
                 manualBlockerOpen = manualBlockerOpen,

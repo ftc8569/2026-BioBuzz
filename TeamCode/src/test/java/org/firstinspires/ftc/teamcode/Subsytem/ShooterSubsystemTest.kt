@@ -29,7 +29,7 @@ class ShooterSubsystemTest {
         ShooterLqrTuning.voltageTolerance = ShooterLqrTuning.DEFAULT_VOLTAGE_TOLERANCE
     }
 
-    private class Rig(val cpr1: Double = 28.0, val cpr2: Double = 28.0) {
+    private class Rig(val cpr1: Double = 28.0, val cpr2: Double = 28.0, val startBlocker: Boolean = true) {
         val motor1 = mock(DcMotorEx::class.java)
         val motor2 = mock(DcMotorEx::class.java)
         val blocker = mock(Servo::class.java)
@@ -63,6 +63,7 @@ class ShooterSubsystemTest {
             doAnswer { power1 = it.getArgument(0); null }.`when`(motor1).setPower(anyDouble())
             doAnswer { power2 = it.getArgument(0); null }.`when`(motor2).setPower(anyDouble())
             shooter = ShooterSubsystem(map) { now }
+            if (startBlocker) shooter.startBlockerControl()
         }
 
         fun rpm(first: Double, second: Double = first) {
@@ -77,6 +78,24 @@ class ShooterSubsystemTest {
             shooter.batteryVoltage.pollOnce()
             shooter.updateShot(power, mode)
         }
+    }
+
+    @Test fun `constructor and immediate stop leave blocker untouched before Start`() {
+        val rig = Rig(startBlocker = false)
+        verify(rig.blocker, never()).setPosition(anyDouble())
+        rig.shooter.setControlMode(ControlMode.MANUAL_POWER)
+        rig.shooter.setManualBlockerOpen(true)
+        rig.shooter.setFlywheelPower(0.0)
+        rig.shooter.forceStop()
+        verify(rig.blocker, never()).setPosition(anyDouble())
+    }
+
+    @Test fun `phased setup and forced output commits leave blocker untouched before Start`() {
+        val rig = Rig(startBlocker = false)
+        rig.shooter.enablePhasedIo()
+        rig.shooter.commitOutputs(force = true)
+        rig.shooter.forceStop()
+        verify(rig.blocker, never()).setPosition(anyDouble())
     }
 
     @Test fun `100 Hz LQR ticks use fresh feedback without repeated mode or telemetry reads`() {
