@@ -13,6 +13,27 @@ class TelemetryToggleTest {
         r.driver.updateTelemetry()
     }
 
+    @Test fun `drive deltas use the preceding frame even when input storage is reused`() {
+        val r = RobotTestRig()
+        fun frame(positions: IntArray, expected: String) {
+            r.motors.take(4).forEachIndexed { index, motor ->
+                `when`(motor.currentPosition).thenReturn(positions[index])
+            }
+            r.displayNow += 50_000_000
+            clearInvocations(r.ds, r.panels)
+            r.driver.update(r.g1, r.g2)
+            for (output in listOf(r.ds, r.panels))
+                verify(output).addData("Drive encoder delta (ticks)", expected)
+        }
+        try {
+            frame(intArrayOf(100, 200, -50, 10), "FL 0, FR 0, BL 0, BR 0")
+            frame(intArrayOf(110, 215, -40, 0), "FL 10, FR 15, BL 10, BR -10")
+            frame(intArrayOf(107, 219, -35, 0), "FL -3, FR 4, BL 5, BR 0")
+        } finally {
+            r.hardware.close()
+        }
+    }
+
     @Test fun `right stick click hides details on both outputs and holding does not retoggle`() {
         val r = RobotTestRig()
         r.g1.right_stick_button = true

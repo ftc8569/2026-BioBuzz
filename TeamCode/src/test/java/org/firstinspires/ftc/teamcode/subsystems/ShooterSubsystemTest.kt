@@ -5,6 +5,7 @@ import com.qualcomm.robotcore.hardware.DcMotorEx
 import com.qualcomm.robotcore.hardware.HardwareMap
 import com.qualcomm.robotcore.hardware.Servo
 import com.qualcomm.robotcore.hardware.VoltageSensor
+import com.qualcomm.robotcore.hardware.configuration.annotations.DeviceProperties
 import com.qualcomm.robotcore.hardware.configuration.annotations.MotorType
 import com.qualcomm.robotcore.hardware.configuration.typecontainers.MotorConfigurationType
 import org.firstinspires.ftc.teamcode.control.FlywheelLqr
@@ -242,6 +243,9 @@ class ShooterSubsystemTest {
         val profile = BioBuzzShooterMotor::class.java.getAnnotation(MotorType::class.java)!!
         assertEquals(28.0, profile.ticksPerRev, 0.0)
         assertEquals(1.0, profile.gearing, 0.0)
+        assertEquals(6000.0, profile.maxRPM, 0.0)
+        val device = BioBuzzShooterMotor::class.java.getAnnotation(DeviceProperties::class.java)!!
+        assertEquals("BioBuzzShooter1To1", device.xmlTag)
         val rig = Rig(profile.ticksPerRev, profile.ticksPerRev)
         rig.speed1 = 50.0 * 2786.0 / 60.0
         rig.speed2 = -rig.speed1
@@ -262,6 +266,50 @@ class ShooterSubsystemTest {
         assertEquals(previous * 1.1, rig.power1, 1e-9)
         assertEquals(rig.power1, rig.power2, 0.0)
         verify(rig.motor1).setMode(DcMotor.RunMode.RUN_WITHOUT_ENCODER)
+    }
+
+    @Test fun `held shooting observes every live model field and recovers after invalid tuning`() {
+        val rig = Rig()
+        rig.rpm(2800.0)
+        rig.step()
+        val changes = listOf<() -> Unit>(
+            { ShooterLqrTuning.kV *= .95 },
+            { ShooterLqrTuning.kA *= .8 },
+            { ShooterLqrTuning.rpmTolerance *= 1.5 },
+            { ShooterLqrTuning.voltageTolerance *= .9 }
+        )
+        for (change in changes) {
+            change()
+            repeat(2) {
+                rig.step(20)
+                val volts = FlywheelLqr().calculate(
+                    2800.0, 2880.0, .020, ShooterLqrTuning.snapshot())!!
+                assertEquals((volts / 12.0).coerceIn(0.0, 1.0), rig.power1, 1e-9)
+                assertEquals(rig.power1, rig.power2, 0.0)
+            }
+        }
+        rig.rpm(2880.0)
+        val invalidations = listOf<() -> Unit>(
+            { ShooterLqrTuning.kV = Double.NaN },
+            { ShooterLqrTuning.kA = 0.0 },
+            { ShooterLqrTuning.rpmTolerance = -1.0 },
+            { ShooterLqrTuning.voltageTolerance = Double.POSITIVE_INFINITY }
+        )
+        for (invalidate in invalidations) {
+            invalidate()
+            repeat(2) {
+                rig.step(20)
+                assertEquals(0.0, rig.power1, 0.0)
+                assertEquals(0.0, rig.power2, 0.0)
+                assertFalse(rig.shooter.control.feedReady)
+                assertFalse(rig.shooter.control.blockerOpen)
+            }
+            restoreModel()
+            rig.step(20)
+            assertTrue(rig.shooter.control.feedReady)
+            assertTrue(rig.shooter.control.blockerOpen)
+            assertEquals(ShooterLqrTuning.kV * 2880.0 / 12.0, rig.power1, 1e-9)
+        }
     }
 
     @Test fun `invalid LQR model stops output and closes latched feeding`() {

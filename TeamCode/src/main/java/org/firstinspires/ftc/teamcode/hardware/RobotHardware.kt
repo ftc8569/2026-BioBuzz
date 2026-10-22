@@ -9,12 +9,15 @@ import com.pedropathing.math.Pose
 import com.pedropathing.revhub.localizers.PinpointLocalizer
 import com.qualcomm.hardware.lynx.LynxModule
 import com.qualcomm.robotcore.hardware.*
+import com.qualcomm.robotcore.hardware.configuration.annotations.DeviceProperties
+import com.qualcomm.robotcore.hardware.configuration.annotations.MotorType
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.TimeUnit
 import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.sin
+import org.firstinspires.ftc.robotcore.external.navigation.Rotation
 import org.firstinspires.ftc.teamcode.control.ShooterController
 import org.firstinspires.ftc.teamcode.diagnostics.LoopProfiler
 import org.firstinspires.ftc.teamcode.diagnostics.LoopStage
@@ -36,6 +39,7 @@ internal class RobotHardware(
     private val pinpoint: PinpointLocalizer
     private val snapshot = SnapshotLocalizer()
     private val driveMotors: List<DcMotor>
+    private val encoders = IntArray(4)
     private val inputs: BulkInputReader
     val pose: Pose get() = snapshot.pose()
     var encoderPositions: IntArray? = null
@@ -76,7 +80,8 @@ internal class RobotHardware(
         profiler.measure(LoopStage.BULK_READ) { inputs.read(diagnostics) }
         shooter.beginFrame()
         encoderPositions = if (diagnostics) profiler.measure(LoopStage.DRIVE_ENCODERS) {
-            driveMotors.map { it.currentPosition }.toIntArray()
+            for (i in encoders.indices) encoders[i] = driveMotors[i].currentPosition
+            encoders
         } else null
         profiler.measure(LoopStage.PINPOINT) {
             pinpoint.update()
@@ -182,32 +187,40 @@ internal fun outputWrites(force: Boolean, count: Int, write: (Int) -> Unit) {
 
 /** Pedro 3.0.1 Mecanum math, with hardware writes delegated to the shared output owner. */
 internal class BufferedMecanum(private val submit: (DoubleArray, Double) -> Unit) : Drivetrain {
-    private var lastPowers = DoubleArray(4)
-    private fun wheels(p: DrivePowers) = doubleArrayOf(
-        p.forward() - p.strafe() - p.turn(), p.forward() + p.strafe() + p.turn(),
-        p.forward() + p.strafe() - p.turn(), p.forward() - p.strafe() + p.turn())
+    private val lastPowers = DoubleArray(4)
+    private val currentWheels = DoubleArray(4)
+    private val deltaWheels = DoubleArray(4)
+    private fun wheels(p: DrivePowers, result: DoubleArray) {
+        result[0] = p.forward() - p.strafe() - p.turn()
+        result[1] = p.forward() + p.strafe() + p.turn()
+        result[2] = p.forward() + p.strafe() - p.turn()
+        result[3] = p.forward() - p.strafe() + p.turn()
+    }
 
     override fun drive(powers: DrivePowers, manual: Boolean) {
-        val raw = wheels(powers)
-        val scale = maxOf(1.0, raw.maxOf { abs(it) })
-        lastPowers = raw.map { it / scale }.toDoubleArray()
+        wheels(powers, lastPowers)
+        val scale = maxOf(1.0, lastPowers.maxOf { abs(it) })
+        for (i in lastPowers.indices) lastPowers[i] /= scale
         submit(lastPowers, Constants.drivetrainConfig.powerThreshold.get())
     }
     override fun maxScaling(current: DrivePowers, delta: DrivePowers): Double {
-        val a = wheels(current)
-        val b = wheels(delta)
+        wheels(current, currentWheels)
+        wheels(delta, deltaWheels)
         var scale = 1.0
-        for (i in a.indices) {
-            if (abs(b[i]) < 1e-9) continue
-            for (t in doubleArrayOf((1.0-a[i])/b[i], (-1.0-a[i])/b[i])) {
-                if (t >= 0.0 && t < scale) scale = t
-            }
+        for (i in currentWheels.indices) {
+            val a = currentWheels[i]
+            val b = deltaWheels[i]
+            if (abs(b) < 1e-9) continue
+            val positive = (1.0-a)/b
+            val negative = (-1.0-a)/b
+            if (positive >= 0.0) scale = minOf(scale, positive)
+            if (negative >= 0.0) scale = minOf(scale, negative)
         }
         return scale.coerceIn(0.0, 1.0)
     }
     override fun stop() = stop(false)
     override fun stop(brake: Boolean) {
-        lastPowers = DoubleArray(4)
+        lastPowers.fill(0.0)
         submit(lastPowers, 0.0)
     }
     override fun debug(): Map<String, Any> = mapOf("wheelPowers" to lastPowers.toList())
@@ -298,7 +311,7 @@ class FlywheelFeedback(val ticksPerRev: Double, val maxTicksPerSecond: Double) {
         private set
     var ticksPerSecond = 0.0
         private set
-    val valid: Boolean get() = ticksPerRev.isFinite() && ticksPerRev > 0.0
+    val valid = ticksPerRev.isFinite() && ticksPerRev > 0.0
     val rpm: Double get() = if (valid) ticksPerSecond * 60.0 / ticksPerRev else Double.NaN
 
     fun sample(position: Int, velocity: Double) {
@@ -308,3 +321,8 @@ class FlywheelFeedback(val ticksPerRev: Double, val maxTicksPerSecond: Double) {
 
     fun targetTicksPerSecond(rpm: Double): Double = if (valid) rpm * ticksPerRev / 60.0 else 0.0
 }
+
+/** Confirmed goBILDA 1:1 gearbox, rather than the SDK's 99.5:1 default. */
+@MotorType(ticksPerRev = 28.0, gearing = 1.0, maxRPM = 6000.0, orientation = Rotation.CCW)
+@DeviceProperties(xmlTag = "BioBuzzShooter1To1", name = "BioBuzz shooter goBILDA 1:1")
+interface BioBuzzShooterMotor

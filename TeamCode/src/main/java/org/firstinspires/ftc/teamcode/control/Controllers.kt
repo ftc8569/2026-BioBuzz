@@ -153,8 +153,8 @@ class ShooterController(private val nanoTime: () -> Long = System::nanoTime) {
 
     private fun updateVelocity(rpm: Double) {
         targetRpm = requestedPower * MAX_MOTOR_RPM
-        val liveModel = ShooterLqrTuning.snapshot()
-        if (liveModel != model) {
+        val liveModel = ShooterLqrTuning.snapshot(model)
+        if (liveModel !== model) {
             model = liveModel
             lqrModelRead = "kV=${liveModel.kV}, kA=${liveModel.kA}, " +
                 "RPM cost=${liveModel.rpmTolerance}, V cost=${liveModel.voltageTolerance}"
@@ -205,7 +205,10 @@ internal data class FlywheelLqrConfig(
     val kA: Double, // V / (RPM/s)
     val rpmTolerance: Double,
     val voltageTolerance: Double
-)
+) {
+    val valid = doubleArrayOf(kV, kA, rpmTolerance, voltageTolerance)
+        .all { it.isFinite() && it > 0.0 }
+}
 
 /** Single measured velocity state: dRPM/dt = -(kV/kA) RPM + volts/kA.
  * No hardware, observer, numerical matrix solver, or accumulated integral error.
@@ -220,11 +223,7 @@ internal class FlywheelLqr {
     fun calculate(rpm: Double, targetRpm: Double, dt: Double, config: FlywheelLqrConfig): Double? {
         feedbackGain = 0.0
         if (!rpm.isFinite() || rpm < 0.0 || !targetRpm.isFinite() || targetRpm < 0.0 ||
-            !dt.isFinite() || dt <= 0.0 ||
-            !config.kV.isFinite() || config.kV <= 0.0 ||
-            !config.kA.isFinite() || config.kA <= 0.0 ||
-            !config.rpmTolerance.isFinite() || config.rpmTolerance <= 0.0 ||
-            !config.voltageTolerance.isFinite() || config.voltageTolerance <= 0.0) return null
+            !dt.isFinite() || dt <= 0.0 || !config.valid) return null
 
         // Exact zero-order-hold discretization. expm1 avoids cancellation at short dt.
         val oneMinusA = -expm1(-config.kV / config.kA * dt)
@@ -267,6 +266,11 @@ class ShooterLqrTuning {
         @JvmField @Volatile var rpmTolerance = DEFAULT_RPM_TOLERANCE
         @JvmField @Volatile var voltageTolerance = DEFAULT_VOLTAGE_TOLERANCE
 
-        internal fun snapshot() = FlywheelLqrConfig(kV, kA, rpmTolerance, voltageTolerance)
+        internal fun snapshot(previous: FlywheelLqrConfig? = null): FlywheelLqrConfig =
+            previous?.takeIf {
+                it.kV.compareTo(kV) == 0 && it.kA.compareTo(kA) == 0 &&
+                    it.rpmTolerance.compareTo(rpmTolerance) == 0 &&
+                    it.voltageTolerance.compareTo(voltageTolerance) == 0
+            } ?: FlywheelLqrConfig(kV, kA, rpmTolerance, voltageTolerance)
     }
 }

@@ -59,8 +59,8 @@ internal class DriverRobot(
     private val hold = hardware.hold
     private val profiler = hardware.profiler
     private val location: Pose get() = hardware.pose
-    private var g1 = ControlSnapshot()
-    private var g2 = ControlSnapshot()
+    private var g1 = Gamepad()
+    private var g2 = Gamepad()
     private val saveButton = PressEdge()
     private val aimButton = PressEdge()
     private val loggingButton = PressEdge()
@@ -69,11 +69,12 @@ internal class DriverRobot(
     private val driveIntakeControls = DriveIntakeControls()
     private val shooterControls = ShooterControls()
     private var detailedLogging = true
-    private var previousEncoders: IntArray? = null
+    private val previousEncoders = IntArray(4)
+    private var hasEncoderBaseline = false
     private val encoderDeltas = IntArray(4)
-    private var hiveLocation: Pose? = null
-    private var blueHiveHeading: Double? = null
-    private var rotatingToBlueHive = false
+    private var savedHive: Pose? = null
+    private var targetHeading: Double? = null
+    private var aiming = false
     private var headingError: Double? = null
     private var shooterPower = 0.0
     private var intakePower = 0.0
@@ -102,35 +103,39 @@ internal class DriverRobot(
     }
 
     fun captureControls(gamepad1: Gamepad, gamepad2: Gamepad) {
-        g1 = ControlSnapshot.capture(gamepad1)
-        g2 = ControlSnapshot.capture(gamepad2)
+        // FTC 12 iterative OpMode freezes these gamepads for each user callback.
+        g1 = gamepad1
+        g2 = gamepad2
         if (loggingButton.pressed(g1.right_stick_button)) {
             detailedLogging = !detailedLogging
-            previousEncoders = null
+            hasEncoderBaseline = false
             telemetry.clear()
         }
     }
 
     internal fun updateDrive() = profiler.measure(LoopStage.DRIVE_TOTAL) {
         hardware.encoderPositions?.let { positions ->
-            val previous = previousEncoders ?: positions
-            for (i in encoderDeltas.indices) encoderDeltas[i] = positions[i] - previous[i]
-            previousEncoders = positions
+            for (i in encoderDeltas.indices) {
+                encoderDeltas[i] =
+                    if (hasEncoderBaseline) positions[i] - previousEncoders[i] else 0
+                previousEncoders[i] = positions[i]
+            }
+            hasEncoderBaseline = true
         }
         if (saveButton.pressed(g1.x)) {
-            hiveLocation = location
-            blueHiveHeading = null
-            rotatingToBlueHive = false
+            savedHive = location
+            targetHeading = null
+            aiming = false
         }
         if (aimButton.pressed(g2.y)) {
-            blueHiveHeading = hiveLocation?.let {
+            targetHeading = savedHive?.let {
                 atan2(it.y() - location.y(), it.x() - location.x())
             }
-            rotatingToBlueHive = blueHiveHeading != null
+            aiming = targetHeading != null
         }
         val turn = aimedTurn(g1.right_stick_x.toDouble())
         val shooting = (g1.right_bumper || g1.y) && !g1.left_bumper
-        if (shooting && !hold.active) rotatingToBlueHive = false
+        if (shooting && !hold.active) aiming = false
         val holding = (shooting || hold.active) && profiler.measure(LoopStage.DRIVE_HOLD) {
             hold.update(shooting, location)
         }
@@ -139,18 +144,14 @@ internal class DriverRobot(
 
     private fun aimedTurn(manual: Double): Double {
         headingError = null
-        if (abs(manual) > 0.05) rotatingToBlueHive = false
-        if (!rotatingToBlueHive) return manual
-        val target = blueHiveHeading ?: return manual
+        if (abs(manual) > 0.05) aiming = false
+        val target = targetHeading?.takeIf { aiming } ?: return manual
         val delta = target - location.heading()
         val error = atan2(sin(delta), cos(delta))
         headingError = error
-        if (abs(error) <= 0.035) {
-            rotatingToBlueHive = false
-            return manual
-        }
-        val correction = -0.8 * error
-        return sign(correction) * abs(correction).coerceIn(0.12, 0.35)
+        aiming = abs(error) > 0.035
+        return if (aiming) -sign(error) * (0.8 * abs(error)).coerceIn(0.12, 0.35)
+            else manual
     }
 
     internal fun updateMechanisms() = profiler.measure(LoopStage.MECHANISMS_TOTAL) {
@@ -186,7 +187,8 @@ internal class DriverRobot(
                 addData("Detailed logging (G1 right-stick click)", "On")
                 addData("Shooting position hold", hold.active)
                 addData("Intake Power", intakePower)
-                addData("Drive intake assist (G1 left-stick click)", driveIntakeControls.enabled)
+                addData("Drive intake assist (G1 left-stick click)",
+                    driveIntakeControls.enabled)
                 reportShooter(shooter, shooterControls, shooterPower, manualBlocker, up, down)
             }
             reportTimings()
@@ -200,26 +202,9 @@ internal class DriverRobot(
         addData("Robot Y (in)", location.y())
         addData("Robot Heading (rad)", location.heading())
         addData("Blue Hive Heading (rad)",
-            blueHiveHeading ?: "Press G1 X to save hive, then G2 Y to aim")
+            targetHeading ?: "Press G1 X to save hive, then G2 Y to aim")
         addData("Turning to Blue Hive",
-            if (rotatingToBlueHive) "Yes (right stick cancels)" else "No")
+            if (aiming) "Yes (right stick cancels)" else "No")
         headingError?.let { addData("Heading Error (rad)", it) }
-    }
-}
-
-/** Only controls used by this OpMode; copied once before controllers execute. */
-internal data class ControlSnapshot(
-    val x: Boolean = false, val y: Boolean = false, val a: Boolean = false, val b: Boolean = false,
-    val dpad_up: Boolean = false, val dpad_down: Boolean = false,
-    val left_bumper: Boolean = false, val right_bumper: Boolean = false,
-    val left_stick_button: Boolean = false, val right_stick_button: Boolean = false,
-    val left_stick_x: Float = 0f, val left_stick_y: Float = 0f, val right_stick_x: Float = 0f,
-    val left_trigger: Float = 0f, val right_trigger: Float = 0f
-) {
-    companion object {
-        fun capture(g: Gamepad) = ControlSnapshot(
-            g.x, g.y, g.a, g.b, g.dpad_up, g.dpad_down, g.left_bumper, g.right_bumper,
-            g.left_stick_button, g.right_stick_button, g.left_stick_x, g.left_stick_y,
-            g.right_stick_x, g.left_trigger, g.right_trigger)
     }
 }

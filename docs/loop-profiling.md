@@ -38,6 +38,14 @@ Local regressions exercise this actual loop with deterministic clocks, and run
 the real Pedro/Foresight controller against hardware doubles. These checks verify
 ordering and calculations, not an achieved hardware loop frequency.
 
+FTC 12's iterative `OpMode` copies pending gamepad data before calling user code,
+so the driver uses those stable callback values directly. Diagnostic encoder
+reads and Pedro wheel mixing reuse fixed arrays. Encoder deltas have independent
+history so a new read cannot overwrite the previous frame. LQR settings retain
+their immutable configuration until a live tuning value changes; invalid settings
+still stop the controller, and corrected settings take effect on the next frame.
+These reduce repeated allocation; hardware speed still requires measurement.
+
 ## What is measured
 
 | Section | Includes |

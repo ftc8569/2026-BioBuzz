@@ -2,6 +2,7 @@ package org.firstinspires.ftc.teamcode.teleop
 
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit
 import org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit
+import org.firstinspires.ftc.teamcode.control.ShooterController.ControlMode
 import org.junit.Assert.*
 import org.junit.Test
 import org.mockito.Mockito.*
@@ -108,6 +109,63 @@ class DriverControlsIntegrationTest {
             r.g1.left_stick_x = -1f
             r.update()
             r.expect(-.9, .9, .9, -.9)
+        }
+    }
+
+    @Test fun `changed triggers and stop button take effect on the next driver loop`() {
+        Rig().use { r ->
+            val intake = DoubleArray(2)
+            r.robot.motors.drop(6).forEachIndexed { index, motor ->
+                doAnswer { intake[index] = it.getArgument(0); null }
+                    .`when`(motor).setPower(anyDouble())
+            }
+            fun expectIntake(power: Double) {
+                r.update()
+                assertArrayEquals(doubleArrayOf(power, power), intake, 1e-7)
+            }
+            r.g1.right_trigger = .75f
+            r.g1.left_trigger = 1f
+            expectIntake(.75)
+            r.g1.right_trigger = 0f
+            r.g1.left_trigger = .4f
+            expectIntake(-.4)
+            r.g1.a = true
+            expectIntake(0.0)
+            r.g1.a = false
+            expectIntake(-.4)
+            r.g1.left_trigger = .01f
+            expectIntake(0.0)
+        }
+    }
+
+    @Test fun `both gamepads retain held preset edges and manual reverse priority`() {
+        Rig().use { r ->
+            val control = r.robot.hardware.shooter.control
+            r.g1.y = true
+            r.g2.dpad_up = true
+            r.g2.b = true
+            repeat(3) { r.update() }
+            assertEquals(ControlMode.MANUAL_POWER, control.controlMode)
+            assertEquals(.725, control.normalizedPower, 1e-9)
+            assertTrue(control.blockerOpen)
+            r.g2.dpad_up = false
+            r.update()
+            r.g1.dpad_up = true
+            r.update()
+            assertEquals(.730, control.normalizedPower, 1e-9)
+            r.g1.left_bumper = true
+            r.g1.left_stick_x = 1f
+            r.update()
+            assertEquals(-.8, control.normalizedPower, 1e-9)
+            assertFalse(r.robot.hardware.hold.active)
+            r.expect(.9, -.9, -.9, .9)
+            r.g1.y = false
+            r.g1.left_bumper = false
+            r.g2.b = false
+            r.update()
+            assertEquals(ControlMode.VELOCITY_LQR, control.controlMode)
+            assertEquals(0.0, control.normalizedPower, 0.0)
+            assertFalse(control.blockerOpen)
         }
     }
 }

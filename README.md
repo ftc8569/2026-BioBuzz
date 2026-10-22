@@ -4,8 +4,9 @@ This repository contains the public FTC SDK for the BIOBUZZ (2026-2027) competit
 
 ## Start reading the robot code here
 
-The main robot code has **10 files**, excluding autonomous routines and the
-supplied Pedro tuning tools:
+TeamCode has **15 production source files**, down from 26: **8 core files** below,
+5 autonomous files, and 2 Pedro configuration/tuning files. Excluding autos,
+there are 10 files total; each subsystem keeps its own file.
 
 | File | Responsibility |
 | --- | --- |
@@ -14,10 +15,8 @@ supplied Pedro tuning tools:
 | `subsystems/DriveSubsystem.kt` | Drive motors and buffered output |
 | `subsystems/IntakeSubsystem.kt` | Intake motors and the shared auto/TeleOp feeding policy |
 | `subsystems/ShooterSubsystem.kt` | Flywheel hardware, cached samples and blocker output |
-| `hardware/RobotHardware.kt` | Constructor wiring, feedback records, Pedro adapters, bulk reads and shutdown |
-| `hardware/BioBuzzShooterMotor.java` | Configured motor profile |
-| `diagnostics/Telemetry.kt` | JoinedTelemetry, display throttling and loop timing |
-| `teleop/Diagnostics.kt` | Existing blocker and shooter diagnostic OpModes |
+| `hardware/RobotHardware.kt` | Constructor wiring, motor profile, feedback, Pedro adapters, bulk reads and shutdown |
+| `diagnostics/Telemetry.kt` | JoinedTelemetry, display throttling, loop timing and diagnostic OpModes |
 | `vision/HiveVision.kt` | Existing hive geometry and Limelight utility |
 
 Each subsystem is about 100 lines. The shooter owns a `ShooterController` object;
@@ -25,8 +24,15 @@ its LQR and readiness logic are shared by autonomous and TeleOp. Dependencies ar
 constructed once during INIT and passed into `DriverRobot`. Button edges share
 one helper, and the shooter reuses the loop timer. Shooter status text is derived
 from its state; its telemetry renderer lives in `diagnostics/Telemetry.kt`.
-Team-owned application source is wrapped to 100 columns (supplied Pedro tools
-retain their upstream formatting).
+Application source is wrapped to 100 columns. `Robot.kt` uses the stable gamepads
+provided by FTC's iterative callbacks. Encoder history and Pedro wheel mixing
+reuse fixed buffers; unchanged LQR settings reuse one validated configuration.
+These changes remove repeated allocations without skipping control updates.
+
+`pedro/Constants.java` holds robot configuration. `pedro/Tuning.java` keeps all
+four registered procedures: Mecanum, Pinpoint, Foresight, and Tests. Five unused
+templates for other odometry hardware were removed. Blocker and shooter diagnostic
+OpModes retain their Driver Station names in `diagnostics/Telemetry.kt`.
 
 Autos live in `autos/`: `AutoOpMode.java` owns readiness and failure handling;
 `BioBuzzAuto.java` owns Basic shoot-and-park; `BioBuzzRed1_5.java` owns the longer
