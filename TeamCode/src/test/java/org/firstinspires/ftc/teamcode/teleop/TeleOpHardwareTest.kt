@@ -7,7 +7,6 @@ import com.qualcomm.robotcore.hardware.configuration.typecontainers.MotorConfigu
 import org.firstinspires.ftc.robotcore.external.Telemetry
 import org.firstinspires.ftc.robotcore.external.navigation.*
 import org.firstinspires.ftc.teamcode.diagnostics.*
-import org.firstinspires.ftc.teamcode.hardware.RobotHardware
 import org.junit.Assert.*
 import org.junit.Test
 import org.mockito.Mockito.*
@@ -125,25 +124,21 @@ class TeleOpHardwareTest {
 
 class RobotFailureTest {
     @org.junit.Test fun `initialization failure stops all acquired motors and blocker without starting Pedro`() {
-        val op = Robot()
         val map = mock(HardwareMap::class.java)
-        op.hardwareMap = map
         val blocker = mock(Servo::class.java)
         `when`(map.get(Servo::class.java, "blocker")).thenReturn(blocker)
         val motors = listOf("driveFL", "driveFR", "driveBL", "driveBR", "shooter1", "shooter2", "intake1", "intake2")
             .associateWith { mock(DcMotorEx::class.java) }
         for ((name, motor) in motors) `when`(map.get(DcMotorEx::class.java, name)).thenReturn(motor)
         `when`(map.get(DcMotorEx::class.java, "driveFR")).thenThrow(IllegalStateException("missing driveFR"))
-        val failure = assertThrows(IllegalStateException::class.java) { op.init() }
+        val failure = assertThrows(IllegalStateException::class.java) { RobotHardware(map) }
         assertEquals("missing driveFR", failure.message)
         for ((name, motor) in motors) if (name != "driveFR") verify(motor, atLeastOnce()).power = 0.0
         verify(blocker, atLeastOnce()).position = 0.78
-        op.loop()
-        assertThrows(IllegalStateException::class.java) { op.start() }
     }
 
     @org.junit.Test fun `cache restoration tries every hub even when a motor and another hub fail`() {
-        val safety = org.firstinspires.ftc.teamcode.hardware.SafeHardware()
+        val safety = org.firstinspires.ftc.teamcode.teleop.SafeHardware()
         val map = mock(HardwareMap::class.java)
         val motor = mock(DcMotorEx::class.java)
         `when`(map.get(DcMotorEx::class.java, "driveFL")).thenReturn(motor)

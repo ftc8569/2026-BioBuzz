@@ -1,6 +1,6 @@
 package org.firstinspires.ftc.teamcode.teleop
 
-import org.firstinspires.ftc.teamcode.control.DriveIntakeControls
+import org.firstinspires.ftc.teamcode.subsystems.DriveIntakeControls
 import org.junit.Assert.*
 import org.junit.Test
 

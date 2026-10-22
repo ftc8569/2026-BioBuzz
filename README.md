@@ -4,35 +4,33 @@ This repository contains the public FTC SDK for the BIOBUZZ (2026-2027) competit
 
 ## Start reading the robot code here
 
-TeamCode has **15 production source files**, down from 26: **8 core files** below,
-5 autonomous files, and 2 Pedro configuration/tuning files. Excluding autos,
-there are 10 files total; each subsystem keeps its own file.
+TeleOp uses **five source files**, with each subsystem in its own file:
 
 | File | Responsibility |
 | --- | --- |
-| `teleop/Robot.kt` | FTC entry point and driver loop |
-| `control/Controllers.kt` | Button state, shot readiness, LQR math and live tuning |
-| `subsystems/DriveSubsystem.kt` | Drive motors and buffered output |
-| `subsystems/IntakeSubsystem.kt` | Intake motors and the shared auto/TeleOp feeding policy |
-| `subsystems/ShooterSubsystem.kt` | Flywheel hardware, cached samples and blocker output |
-| `hardware/RobotHardware.kt` | Constructor wiring, motor profile, feedback, Pedro adapters, bulk reads and shutdown |
-| `diagnostics/Telemetry.kt` | JoinedTelemetry, display throttling, loop timing and diagnostic OpModes |
-| `vision/HiveVision.kt` | Existing hive geometry and Limelight utility |
+| `teleop/Robot.kt` | NextFTC entry, constructor wiring, driver loop and shutdown |
+| `subsystems/DriveSubsystem.kt` | Drive motors, Pedro adapter and shooting hold |
+| `subsystems/IntakeSubsystem.kt` | Intake, collection assist and shared auto/TeleOp feeding |
+| `subsystems/ShooterSubsystem.kt` | Flywheels, blocker, LQR, presets, voltage and motor profile |
+| `diagnostics/Telemetry.kt` | Joined telemetry, timing and diagnostic OpModes |
 
-Each subsystem is about 100 lines. The shooter owns a `ShooterController` object;
-its LQR and readiness logic are shared by autonomous and TeleOp. Dependencies are
-constructed once during INIT and passed into `DriverRobot`. Button edges share
-one helper, and the shooter reuses the loop timer. Shooter status text is derived
-from its state; its telemetry renderer lives in `diagnostics/Telemetry.kt`.
-Application source is wrapped to 100 columns. `Robot.kt` uses the stable gamepads
-provided by FTC's iterative callbacks. Encoder history and Pedro wheel mixing
-reuse fixed buffers; unchanged LQR settings reuse one validated configuration.
-These changes remove repeated allocations without skipping control updates.
+`Controllers.kt` and `RobotHardware.kt` were removed; their helpers now live with
+what they control. Small classes keep the LQR math, hardware and driver input
+separate inside each file. All production lines stay within 100 columns. The
+shooter and diagnostics files are longer because they retain the existing model,
+live tuning, timing data and diagnostic OpModes.
 
-`pedro/Constants.java` holds robot configuration. `pedro/Tuning.java` keeps all
-four registered procedures: Mecanum, Pinpoint, Foresight, and Tests. Five unused
-templates for other odometry hardware were removed. Blocker and shooter diagnostic
-OpModes retain their Driver Station names in `diagnostics/Telemetry.kt`.
+NextFTC v2 **0.3.0** discovers `RobotSession` without opening hardware. Every INIT
+creates fresh hardware and a `DriverRobot` mechanism. NextFTC schedules its default
+command, which owns the drive, shooter and intake and performs one complete
+read → compute → write → report frame. The `afterEnd` hook stops devices and restores
+cache modes even after a loop failure. Gamepad values and encoder history use
+reused buffers; LQR settings are revalidated only when changed.
+
+Outside these five files are five auto files, two Pedro configuration/tuning files,
+and the existing `vision/HiveVision.kt` utility: **13 production files total**.
+`pedro/Tuning.java` preserves Mecanum, Pinpoint, Foresight and Tests. Blocker and
+shooter diagnostics retain their Driver Station names in `diagnostics/Telemetry.kt`.
 
 Autos live in `autos/`: `AutoOpMode.java` owns readiness and failure handling;
 `BioBuzzAuto.java` owns Basic shoot-and-park; `BioBuzzRed1_5.java` owns the longer
@@ -40,8 +38,9 @@ routine; `BioBuzzBackupAuto.java` owns backup driving; `Autonomous.kt` groups
 alliance variants and the shared shoot command.
 
 TeleOp retains its existing Driver Station name, **BioBuzz NextFTC Kotlin TeleOp**,
-so drivers can select the same entry. Its implementation now uses the FTC SDK's
-direct `OpMode` loop; NextFTC and FTCLib are no longer dependencies.
+so drivers can select the same entry. It now uses the current
+[NextFTC lifecycle](https://nextftc.dev/robot/nextopmode/) and command scheduler.
+The shared intake and shooter implementations are also used by the existing autos.
 
 All shooting modes use the same **0.6 intake feed power** and **100 ms blocker
 opening delay**. Basic autos feed for two full seconds after that delay; the longer
@@ -53,6 +52,10 @@ Local verification only (no robot connection required):
 ```sh
 ./gradlew :TeamCode:testDebugUnitTest :TeamCode:assembleDebug --console=plain
 ```
+
+The build uses Gradle **9.5.1**, Kotlin **2.4.20**, and Android plugin **8.13.2**.
+Gradle 9.6+ removes an API used by Android plugin 8.x; see the
+[Gradle compatibility note](https://docs.gradle.org/9.7.0/userguide/upgrading_version_9.html#agp_8x_incompatible).
 
 See [autonomous reliability](docs/ftc-autonomous-guidelines.md),
 [shooter control](docs/control/shooter-lqr.md), and
@@ -86,7 +89,7 @@ Load 0.2.4 calls `Project.exec`, which was removed in Gradle 9. See the
 
 TeamCode includes Panels with OpMode control, telemetry, configurable variables,
 graphs, and field drawing. Camera plugins are excluded. The project uses Kotlin
-2.4.10 and FTC SDK 12.0.0 as required by the current
+2.4.20 and FTC SDK 12.0.0 as required by the current
 [Panels setup guide](https://panels.bylazar.com/docs/com.bylazar.docs/Prerequisites/).
 
 Install the full app after this dependency change using

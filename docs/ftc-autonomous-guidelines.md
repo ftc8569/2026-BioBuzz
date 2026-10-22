@@ -88,6 +88,11 @@ full seconds of transfer. The longer routine retains its one-second transfer.
 Manual reverse, stop, collection assist, and the manual-mode blocker override
 remain available in TeleOp. Collection path powers and route coordinates are unchanged.
 
-The direct iterative loop follows the [FTC SDK 12 lifecycle example](https://github.com/FIRST-Tech-Challenge/FtcRobotController/blob/v12.0/FtcRobotController/src/main/java/org/firstinspires/ftc/robotcontroller/external/samples/BasicOpMode_Iterative.java).
+TeleOp uses [NextFTC's NextOpMode lifecycle](https://nextftc.dev/robot/nextopmode/).
+Its hardware-free robot container is discovered once; each INIT constructs fresh
+hardware and one coordinated default command. Cleanup uses `OpModeHook.afterEnd`,
+which the installed 0.3.0 runtime calls from `finally`, including loop failures.
+The shared cache owner remains responsible for refresh and restoration; adding
+NextFTC's `BulkReadHook` would duplicate that responsibility.
 Pedro's [v3.0.1 Follower implementation](https://github.com/Pedro-Pathing/PedroPathing/blob/v3.0.1/core/src/main/java/com/pedropathing/follower/Follower.java)
 confirms why shutdown stops drivetrain outputs directly instead of calling update.

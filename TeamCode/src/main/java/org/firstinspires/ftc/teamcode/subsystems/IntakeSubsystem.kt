@@ -4,14 +4,13 @@ import com.qualcomm.robotcore.hardware.DcMotor
 import com.qualcomm.robotcore.hardware.DcMotorEx
 import com.qualcomm.robotcore.hardware.DcMotorSimple
 import com.qualcomm.robotcore.hardware.HardwareMap
-import org.firstinspires.ftc.teamcode.control.ShooterController.ControlMode
-import org.firstinspires.ftc.teamcode.hardware.outputWrites
+import kotlin.math.abs
+import org.firstinspires.ftc.teamcode.subsystems.ShooterController.ControlMode
+import org.firstinspires.ftc.teamcode.teleop.outputWrites
 
 class IntakeSubsystem(hardwareMap: HardwareMap) {
-    private val intake1 = hardwareMap.get(DcMotorEx::class.java, "intake1")
-    private val intake2 = hardwareMap.get(DcMotorEx::class.java, "intake2")
-
-    private val motors = listOf(intake1, intake2)
+    private val motors = listOf("intake1", "intake2")
+        .map { hardwareMap.get(DcMotorEx::class.java, it) }
     private var phasedIo = false
     private var desiredPower = 0.0
     private val committed = DoubleArray(2) { Double.NaN }
@@ -38,8 +37,7 @@ class IntakeSubsystem(hardwareMap: HardwareMap) {
     }
 
     fun setPower(power: Double) {
-        val clipped = if (power.isFinite()) power.coerceIn(-1.0, 1.0) else 0.0
-        desiredPower = clipped
+        desiredPower = if (power.isFinite()) power.coerceIn(-1.0, 1.0) else 0.0
         if (!phasedIo) commitOutputs()
     }
 }
@@ -97,4 +95,28 @@ class IntakeFeed @JvmOverloads constructor(private val nanoTime: () -> Long = Sy
     }
 
     companion object { const val FEED_POWER = 0.6 }
+}
+
+/** One event per press; releasing arms the next event. */
+internal class PressEdge {
+    private var previous = false
+    fun pressed(down: Boolean): Boolean {
+        val rising = down && !previous
+        previous = down
+        return rising
+    }
+}
+
+/** Default-on collection assist, toggled once per left-stick button press. */
+internal class DriveIntakeControls {
+    var enabled = true
+        private set
+    private val button = PressEdge()
+
+    fun update(button: Boolean) {
+        if (this.button.pressed(button)) enabled = !enabled
+    }
+
+    fun minimumPower(drivePower: Double): Double =
+        if (enabled && abs(drivePower) > 0.5) 0.45 else 0.0
 }

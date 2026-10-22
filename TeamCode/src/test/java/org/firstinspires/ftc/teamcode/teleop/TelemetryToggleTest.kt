@@ -23,7 +23,7 @@ class TelemetryToggleTest {
             clearInvocations(r.ds, r.panels)
             r.driver.update(r.g1, r.g2)
             for (output in listOf(r.ds, r.panels))
-                verify(output).addData("Drive encoder delta (ticks)", expected)
+                verify(output).addData("Drive encoder delta (ticks)", expected as Any)
         }
         try {
             frame(intArrayOf(100, 200, -50, 10), "FL 0, FR 0, BL 0, BR 0")
@@ -42,7 +42,7 @@ class TelemetryToggleTest {
         render(r)
         for (output in listOf(r.ds, r.panels)) {
             verify(output).clearAll()
-            verify(output, times(4)).addData("Loop interval (ms)", "0.00")
+            verify(output, times(4)).addData("Loop interval (ms)", "0.00" as Any)
             verify(output, times(4)).update()
             verifyNoMoreInteractions(output)
         }
@@ -63,9 +63,9 @@ class TelemetryToggleTest {
         r.driver.update(r.g1, r.g2)
         for (output in listOf(r.ds, r.panels)) {
             verify(output).clearAll()
-            verify(output).addData("Detailed logging (G1 right-stick click)", "On")
-            verify(output).addData("Drive encoder delta (ticks)", "FL 0, FR 0, BL 0, BR 0")
-            verify(output).addData("Shooter flywheel 1 RPM", "0")
+            verify(output).addData("Detailed logging (G1 right-stick click)", "On" as Any)
+            verify(output).addData("Drive encoder delta (ticks)", "FL 0, FR 0, BL 0, BR 0" as Any)
+            verify(output).addData("Shooter flywheel 1 RPM", "0" as Any)
         }
     }
 
@@ -90,7 +90,7 @@ class TelemetryToggleTest {
         mockStatic(RobotLog::class.java).use { logs ->
             render(r)
             for (output in listOf(r.ds, r.panels))
-                verify(output).addData("Timing: Pinpoint location read", "avg=6.000 ms max=9.000 ms n=2")
+                verify(output).addData("Timing: Pinpoint location read", "avg=6.000 ms max=9.000 ms n=2" as Any)
             logs.verify { RobotLog.ii(eq("BioBuzzLoop"), contains("Pinpoint location read: avg=6.000 ms")) }
         }
     }

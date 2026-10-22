@@ -11,9 +11,9 @@ import com.qualcomm.robotcore.hardware.Servo
 import com.qualcomm.robotcore.util.RobotLog
 import java.util.Locale
 import org.firstinspires.ftc.robotcore.external.Telemetry
-import org.firstinspires.ftc.teamcode.control.ShooterController
-import org.firstinspires.ftc.teamcode.control.ShooterControls
-import org.firstinspires.ftc.teamcode.hardware.SafeHardware
+import org.firstinspires.ftc.teamcode.subsystems.ShooterController
+import org.firstinspires.ftc.teamcode.subsystems.ShooterControls
+import org.firstinspires.ftc.teamcode.teleop.SafeHardware
 import org.firstinspires.ftc.teamcode.subsystems.ShooterSubsystem
 
 internal enum class LoopStage(val label: String) {
@@ -173,7 +173,9 @@ internal class RobotTelemetry(
 
     fun addData(caption: String, value: Any?) { joined.addData(caption, value) }
     fun addData(caption: String, format: String, vararg values: Any?) {
-        joined.addData(caption, String.format(Locale.US, format, *values))
+        // Any selects the value overload, avoiding a second formatting pass per destination.
+        val text: Any = if (values.isEmpty()) format else String.format(Locale.US, format, *values)
+        joined.addData(caption, text)
     }
     fun publish(build: RobotTelemetry.() -> Unit) {
         if (!refresh.isDue()) return
@@ -195,7 +197,7 @@ internal class RobotTelemetry(
             val report = timingRows.joinToString("; ") { "${it.first}: ${it.second}" }
             RobotLog.ii("BioBuzzLoop", report)
         }
-        for ((label, value) in timingRows) joined.addData(label, value)
+        for ((label, value) in timingRows) joined.addData(label, value as Any)
     }
 
     private fun timed(delegate: Telemetry, stage: LoopStage): Telemetry =

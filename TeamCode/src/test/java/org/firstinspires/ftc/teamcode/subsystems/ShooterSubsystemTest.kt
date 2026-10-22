@@ -8,13 +8,9 @@ import com.qualcomm.robotcore.hardware.VoltageSensor
 import com.qualcomm.robotcore.hardware.configuration.annotations.DeviceProperties
 import com.qualcomm.robotcore.hardware.configuration.annotations.MotorType
 import com.qualcomm.robotcore.hardware.configuration.typecontainers.MotorConfigurationType
-import org.firstinspires.ftc.teamcode.control.FlywheelLqr
-import org.firstinspires.ftc.teamcode.control.ShooterController.ControlMode
-import org.firstinspires.ftc.teamcode.control.ShooterLqrTuning
+import org.firstinspires.ftc.teamcode.subsystems.ShooterController.ControlMode
 import org.firstinspires.ftc.teamcode.diagnostics.LoopProfiler
 import org.firstinspires.ftc.teamcode.diagnostics.LoopStage
-import org.firstinspires.ftc.teamcode.hardware.BioBuzzShooterMotor
-import org.firstinspires.ftc.teamcode.subsystems.FeedControls
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before

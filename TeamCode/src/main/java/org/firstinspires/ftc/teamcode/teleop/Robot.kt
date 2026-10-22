@@ -2,49 +2,52 @@ package org.firstinspires.ftc.teamcode.teleop
 
 import com.bylazar.telemetry.PanelsTelemetry
 import com.pedropathing.math.Pose
-import com.qualcomm.robotcore.eventloop.opmode.OpMode
-import com.qualcomm.robotcore.eventloop.opmode.TeleOp
-import com.qualcomm.robotcore.hardware.Gamepad
+import com.pedropathing.revhub.localizers.PinpointLocalizer
+import com.qualcomm.hardware.lynx.LynxModule
+import com.qualcomm.robotcore.hardware.*
+import dev.nextftc.robot.Mechanism
+import dev.nextftc.robot.NextRobot
+import dev.nextftc.robot.opmode.NextOpMode
+import dev.nextftc.robot.opmode.NextTeleop
+import dev.nextftc.robot.opmode.OpModeHook
 import kotlin.math.*
-import org.firstinspires.ftc.teamcode.control.*
+import org.firstinspires.ftc.robotcore.external.Telemetry
 import org.firstinspires.ftc.teamcode.diagnostics.*
-import org.firstinspires.ftc.teamcode.hardware.RobotHardware
-import org.firstinspires.ftc.teamcode.subsystems.IntakeFeed
+import org.firstinspires.ftc.teamcode.pedro.Constants
+import org.firstinspires.ftc.teamcode.subsystems.*
 
-/** FTC supplies hardwareMap during INIT, so construct the robot there. */
-@TeleOp(name = "BioBuzz NextFTC Kotlin TeleOp")
-class Robot : OpMode() {
-    private var hardware: RobotHardware? = null
-    private var driver: DriverRobot? = null
-    private var running = false
+/** NextFTC constructs the OpMode at INIT and injects the hardware-free robot container. */
+@NextTeleop(name = "BioBuzz NextFTC Kotlin TeleOp")
+class Robot(robot: RobotSession) : NextOpMode(robot, robot)
 
-    override fun init() = guarded {
-        val devices = RobotHardware(hardwareMap).also { hardware = it }
-        val display = RobotTelemetry(telemetry, PanelsTelemetry.ftcTelemetry, devices.profiler)
-        driver = DriverRobot(devices, display)
-    }
+/** New hardware and commands for every INIT; NextFTC guarantees afterEnd on loop failures. */
+class RobotSession internal constructor(private val panels: () -> Telemetry) :
+    NextRobot, OpModeHook {
+    constructor() : this({ PanelsTelemetry.ftcTelemetry })
+    internal var hardware: RobotHardware? = null
+        private set
+    internal var driver: DriverRobot? = null
+        private set
+    override var mechanisms: Set<Mechanism> = emptySet()
+        private set
 
-    override fun start() = guarded {
-        checkNotNull(driver) { "Robot initialization is incomplete" }.start()
-        running = true
-    }
-
-    override fun loop() { if (running) guarded { driver!!.update(gamepad1, gamepad2) } }
-
-    override fun stop() {
-        running = false
-        driver = null
-        hardware?.close()
-        hardware = null
-    }
-
-    private inline fun guarded(action: () -> Unit) {
-        try { action() } catch (failure: Throwable) {
-            try { stop() } catch (cleanup: Throwable) {
-                if (cleanup !== failure) failure.addSuppressed(cleanup)
-            }
-            throw failure
+    override fun afterConstruction(opMode: NextOpMode) = guarded(::afterEnd) {
+        val devices = RobotHardware(opMode.hardwareMap).also { hardware = it }
+        val display = RobotTelemetry(opMode.telemetry, panels(), devices.profiler)
+        driver = DriverRobot(devices, display).also {
+            it.bind(opMode.gamepad1, opMode.gamepad2, ::afterEnd)
+            mechanisms = setOf(it)
         }
+    }
+
+    override fun beforeStart() = guarded(::afterEnd) { checkNotNull(driver).start() }
+
+    override fun afterEnd() {
+        val devices = hardware
+        hardware = null
+        driver = null
+        mechanisms = emptySet()
+        devices?.close()
     }
 }
 
@@ -53,14 +56,25 @@ internal class DriverRobot(
     private val hardware: RobotHardware,
     val telemetry: RobotTelemetry,
     nanoTime: () -> Long = System::nanoTime
-) {
+) : Mechanism {
     private val drive = hardware.drive
     private val shooter = hardware.shooter
     private val hold = hardware.hold
     private val profiler = hardware.profiler
     private val location: Pose get() = hardware.pose
-    private var g1 = Gamepad()
-    private var g2 = Gamepad()
+    private val g1 = Gamepad()
+    private val g2 = Gamepad()
+    private var liveG1 = g1
+    private var liveG2 = g2
+    private var close: () -> Unit = hardware::close
+    override val defaultCommand = infinite { guarded(close) { update(liveG1, liveG2) } }
+        .requiring(drive, shooter, hardware.intake)
+
+    fun bind(gamepad1: Gamepad, gamepad2: Gamepad, close: () -> Unit = hardware::close) {
+        liveG1 = gamepad1
+        liveG2 = gamepad2
+        this.close = close
+    }
     private val saveButton = PressEdge()
     private val aimButton = PressEdge()
     private val loggingButton = PressEdge()
@@ -103,9 +117,9 @@ internal class DriverRobot(
     }
 
     fun captureControls(gamepad1: Gamepad, gamepad2: Gamepad) {
-        // FTC 12 iterative OpMode freezes these gamepads for each user callback.
-        g1 = gamepad1
-        g2 = gamepad2
+        // NextFTC uses LinearOpMode: sample once before computing this frame.
+        g1.sample(gamepad1)
+        g2.sample(gamepad2)
         if (loggingButton.pressed(g1.right_stick_button)) {
             detailedLogging = !detailedLogging
             hasEncoderBaseline = false
@@ -207,4 +221,192 @@ internal class DriverRobot(
             if (aiming) "Yes (right stick cancels)" else "No")
         headingError?.let { addData("Heading Error (rad)", it) }
     }
+}
+
+/** Preserve the original failure and any cleanup errors before NextFTC tears down its hooks. */
+private inline fun guarded(stop: () -> Unit, action: () -> Unit) {
+    try { action() } catch (failure: Throwable) {
+        try { stop() } catch (cleanup: Throwable) {
+            if (cleanup !== failure) failure.addSuppressed(cleanup)
+        }
+        throw failure
+    }
+}
+
+private fun Gamepad.sample(source: Gamepad) {
+    a = source.a
+    b = source.b
+    x = source.x
+    y = source.y
+    dpad_up = source.dpad_up
+    dpad_down = source.dpad_down
+    left_bumper = source.left_bumper
+    right_bumper = source.right_bumper
+    left_stick_button = source.left_stick_button
+    right_stick_button = source.right_stick_button
+    left_stick_x = source.left_stick_x
+    left_stick_y = source.left_stick_y
+    right_stick_x = source.right_stick_x
+    left_trigger = source.left_trigger
+    right_trigger = source.right_trigger
+}
+
+/** Construct once during INIT. Controllers use these objects for the entire match. */
+internal class RobotHardware(
+    map: HardwareMap,
+    val profiler: LoopProfiler = LoopProfiler(),
+    nanoTime: () -> Long = System::nanoTime
+) : AutoCloseable {
+    private val safety = SafeHardware()
+    val drive: DriveSubsystem
+    val intake: IntakeSubsystem
+    val shooter: ShooterSubsystem
+    val hold: ShootingDriveHold
+    private val pinpoint: PinpointLocalizer
+    private val snapshot = SnapshotLocalizer()
+    private val driveMotors: List<DcMotor>
+    private val encoders = IntArray(4)
+    private val inputs: BulkInputReader
+    val pose: Pose get() = snapshot.pose()
+    var encoderPositions: IntArray? = null
+        private set
+
+    init {
+        try {
+            safety.closeBlocker(map, ShooterController.BLOCKER_CLOSED)
+            safety.prepareMotors(map, true)
+            drive = DriveSubsystem(map).apply { enablePhasedIo() }
+            intake = IntakeSubsystem(map).apply { enablePhasedIo() }
+            shooter = ShooterSubsystem(map, nanoTime).apply {
+                loopProfiler = profiler
+                enablePhasedIo()
+            }
+            safety.onStop { shooter.stopVoltagePolling() }
+            pinpoint = PinpointLocalizer(map, Constants.localizerConfig)
+            val drivetrain = BufferedMecanum(drive::requestWheelPowers)
+            hold = ShootingDriveHold(Constants.create(snapshot, drivetrain))
+            safety.onStop { hold.stop() }
+            driveMotors = SafeHardware.DRIVE_NAMES.map { map.get(DcMotor::class.java, it) }
+            val hubs = map.getAll(LynxModule::class.java)
+            safety.setCaching(hubs, LynxModule.BulkCachingMode.MANUAL)
+            inputs = BulkInputReader(hubs,
+                listOf("shooter1", "shooter2").map { map.get(DcMotor::class.java, it) },
+                driveMotors)
+            shooter.startVoltagePolling()
+        } catch (failure: Throwable) {
+            throw safety.stop(failure)!!
+        }
+    }
+
+    fun start() {
+        profiler.measure(LoopStage.LOCATION_RESET) { pinpoint.setPose(Pose.zero()) }
+    }
+
+    fun read(diagnostics: Boolean) = profiler.measure(LoopStage.READ_INPUTS) {
+        profiler.measure(LoopStage.BULK_READ) { inputs.read(diagnostics) }
+        shooter.beginFrame()
+        encoderPositions = if (diagnostics) profiler.measure(LoopStage.DRIVE_ENCODERS) {
+            for (i in encoders.indices) encoders[i] = driveMotors[i].currentPosition
+            encoders
+        } else null
+        profiler.measure(LoopStage.PINPOINT) {
+            pinpoint.update()
+            snapshot.capture(pinpoint.state())
+        }
+    }
+
+    fun write() = profiler.measure(LoopStage.WRITE_OUTPUTS) {
+        profiler.measure(LoopStage.DRIVE_OUTPUT) { drive.commitOutputs() }
+        shooter.commitOutputs()
+        profiler.measure(LoopStage.INTAKE_OUTPUT) { intake.commitOutputs() }
+    }
+
+    override fun close() { safety.stop(null)?.let { throw it } }
+}
+
+/** Resolve hub ownership once; getBulkData refreshes MANUAL caches once per active read. */
+internal class BulkInputReader(
+    hubs: List<LynxModule>, feedback: List<DcMotor>, diagnostics: List<DcMotor>
+) {
+    private val feedbackConnections = feedback.map { it.controller.connectionInfo }.toSet()
+    private val diagnosticConnections = diagnostics.map { it.controller.connectionInfo }.toSet()
+    private val feedbackHubs = hubs.filter { it.connectionInfo in feedbackConnections }
+    private val diagnosticHubs = hubs.filter {
+        it !in feedbackHubs && it.connectionInfo in diagnosticConnections
+    }
+
+    fun read(includeDiagnostics: Boolean) {
+        feedbackHubs.forEach { it.bulkData }
+        if (includeDiagnostics) diagnosticHubs.forEach { it.bulkData }
+    }
+}
+
+/** Retain devices before setup writes, so even failed constructors can stop them. */
+class SafeHardware {
+    private val stops = mutableListOf<Runnable>()
+    private val cacheModes = linkedMapOf<LynxModule, LynxModule.BulkCachingMode>()
+
+    fun prepareMotors(map: HardwareMap, mechanisms: Boolean) {
+        val names = if (mechanisms) DRIVE_NAMES +
+            listOf("shooter1", "shooter2", "intake1", "intake2") else DRIVE_NAMES
+        var failure: Throwable? = null
+        for (name in names) failure = attempt(failure) {
+            motor(map, name).apply { mode = DcMotor.RunMode.RUN_WITHOUT_ENCODER; power = 0.0 }
+        }
+        rethrow(failure)
+    }
+
+    fun motor(map: HardwareMap, name: String): DcMotorEx =
+        map.get(DcMotorEx::class.java, name).also {
+            stops += Runnable { it.power = 0.0 }
+        }
+
+    fun closeBlocker(map: HardwareMap, position: Double): Servo =
+        map.get(Servo::class.java, "blocker").also {
+            stops += Runnable { it.position = position }
+            it.position = position
+        }
+
+    fun onStop(action: Runnable) { stops.add(0, action) }
+
+    fun setCaching(hubs: List<LynxModule>, mode: LynxModule.BulkCachingMode) {
+        for (hub in hubs) {
+            cacheModes.putIfAbsent(hub, hub.bulkCachingMode)
+            hub.bulkCachingMode = mode
+        }
+    }
+
+    fun stop(cause: Throwable?): Throwable? {
+        var failure = cause
+        for (action in stops) failure = attempt(failure, action)
+        for ((hub, mode) in cacheModes) failure = attempt(failure) { hub.bulkCachingMode = mode }
+        return failure
+    }
+
+    companion object {
+        internal val DRIVE_NAMES = listOf("driveFL", "driveFR", "driveBL", "driveBR")
+        @JvmStatic fun attempt(first: Throwable?, action: Runnable): Throwable? {
+            try { action.run() } catch (next: RuntimeException) { return combine(first, next) }
+            catch (next: LinkageError) { return combine(first, next) }
+            return first
+        }
+        private fun combine(first: Throwable?, next: Throwable): Throwable {
+            if (first == null) return next
+            if (first !== next) first.addSuppressed(next)
+            return first
+        }
+        @JvmStatic fun rethrow(failure: Throwable?) { failure?.let { throw it } }
+    }
+}
+
+/** Normal commits fail fast; forced shutdown attempts every device before rethrowing. */
+internal fun outputWrites(force: Boolean, count: Int, write: (Int) -> Unit) {
+    var failure: Throwable? = null
+    for (index in 0 until count) {
+        try { write(index) } catch (t: Throwable) {
+            if (!force) throw t
+            if (failure == null) failure = t else if (failure !== t) failure.addSuppressed(t)
+        }
+    }
+    failure?.let { throw it }
 }

@@ -3,8 +3,8 @@ package org.firstinspires.ftc.teamcode.autos
 import com.pedropathing.follower.Follower
 import com.pedropathing.ivy.behaviors.EndCondition
 import com.pedropathing.math.Pose
-import org.firstinspires.ftc.teamcode.control.ShooterController
-import org.firstinspires.ftc.teamcode.control.ShooterController.ControlMode
+import org.firstinspires.ftc.teamcode.subsystems.ShooterController
+import org.firstinspires.ftc.teamcode.subsystems.ShooterController.ControlMode
 import org.firstinspires.ftc.teamcode.subsystems.IntakeSubsystem
 import org.firstinspires.ftc.teamcode.subsystems.ShooterSubsystem
 import org.junit.Assert.*

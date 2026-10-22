@@ -11,13 +11,18 @@ class RobotTelemetryTest {
         val panels = mock(Telemetry::class.java)
         val report = RobotTelemetry(ds, panels, LoopProfiler { 0L }) { 0L }
         var formatted = 0
-        val value = object { override fun toString(): String { formatted++; return "cached RPM" } }
-        report.publish { report.addData("Shooter", "%s", value) }
+        val value = object { override fun toString(): String { formatted++; return "cached 100% RPM" } }
+        report.publish {
+            addData("Shooter", "%s", value)
+            addData("Ready", "100% ready")
+        }
         assertEquals(1, formatted)
         for (output in listOf(ds, panels)) {
             verify(output).msTransmissionInterval = 50
-            verify(output).addData("Shooter", "cached RPM")
+            verify(output).addData("Shooter", "cached 100% RPM" as Any)
+            verify(output).addData("Ready", "100% ready" as Any)
             verify(output).update()
+            verifyNoMoreInteractions(output)
         }
     }
 

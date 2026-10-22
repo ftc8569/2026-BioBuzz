@@ -9,7 +9,6 @@ import com.pedropathing.ivy.behaviors.EndCondition;
 import com.pedropathing.math.Pose;
 import com.pedropathing.paths.Path;
 import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
-import org.firstinspires.ftc.teamcode.autos.ShootCommand;
 import static com.pedropathing.ivy.groups.Groups.sequential;
 
 /** Shoot, collect on path 1, drive path 2, shoot again, then drive path 3. */

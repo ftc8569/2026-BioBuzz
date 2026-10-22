@@ -6,8 +6,8 @@ import com.pedropathing.math.Pose
 import com.pedropathing.math.Velocity
 import com.pedropathing.tuning.autotune.TunerRegistrar
 import com.pedropathing.tuning.autotune.TunerScanner
-import org.firstinspires.ftc.teamcode.hardware.BufferedMecanum
-import org.firstinspires.ftc.teamcode.hardware.SnapshotLocalizer
+import org.firstinspires.ftc.teamcode.subsystems.BufferedMecanum
+import org.firstinspires.ftc.teamcode.subsystems.SnapshotLocalizer
 import org.firstinspires.ftc.teamcode.pedro.Tuning
 import org.junit.Assert.*
 import org.junit.Test

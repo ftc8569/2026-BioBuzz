@@ -1,7 +1,7 @@
 package org.firstinspires.ftc.teamcode.teleop
 
-import org.firstinspires.ftc.teamcode.control.ShooterController.ControlMode
-import org.firstinspires.ftc.teamcode.control.ShooterControls
+import org.firstinspires.ftc.teamcode.subsystems.ShooterController.ControlMode
+import org.firstinspires.ftc.teamcode.subsystems.ShooterControls
 import org.junit.Assert.*
 import org.junit.Test
 

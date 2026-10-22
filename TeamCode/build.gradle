@@ -20,19 +20,6 @@ load {
     autoconnect = dev.frozenmilk.sinister.sloth.AutoConnect.valueOf('NEVER')
 }
 
-//
-// build.gradle in TeamCode
-//
-// Most of the definitions for building your module reside in a common, shared
-// file 'build.common.gradle'. Being factored in this way makes it easier to
-// integrate updates to the FTC into your code. If you really need to customize
-// the build definitions, you can place those customizations in this file, but
-// please think carefully as to whether such customizations are really necessary
-// before doing so.
-
-// Custom definitions may go here
-
-// Include common definitions from above.
 apply from: '../build.common.gradle'
 apply from: '../build.dependencies.gradle'
 
@@ -53,13 +40,12 @@ kotlin {
 }
 
 repositories {
-    maven { url = 'https://repo.dairy.foundation/releases' }
     maven { url = 'https://mymaven.bylazar.com/releases' }
 }
 
 dependencies {
     implementation project(':FtcRobotController')
-    implementation 'org.jetbrains.kotlin:kotlin-stdlib:2.4.10'
+    implementation 'dev.nextftc.v2:robot:0.3.0'
     implementation 'dev.frozenmilk.sinister:Sloth:0.3.2'
     // Panels with individual plugins so camera support remains disabled.
     implementation 'com.bylazar:panels:1.0.7'

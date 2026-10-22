@@ -6,7 +6,7 @@ import com.pedropathing.math.Pose;
 import com.pedropathing.paths.Path;
 import com.qualcomm.robotcore.eventloop.opmode.Autonomous;
 import java.util.function.LongSupplier;
-import org.firstinspires.ftc.teamcode.control.ShooterController;
+import org.firstinspires.ftc.teamcode.subsystems.ShooterController;
 import org.firstinspires.ftc.teamcode.subsystems.IntakeFeed;
 
 /** Shoot while stationary, follow pedro paths/basicred.pp, then stop. */

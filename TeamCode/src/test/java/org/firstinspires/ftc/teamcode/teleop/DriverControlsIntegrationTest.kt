@@ -2,7 +2,7 @@ package org.firstinspires.ftc.teamcode.teleop
 
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit
 import org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit
-import org.firstinspires.ftc.teamcode.control.ShooterController.ControlMode
+import org.firstinspires.ftc.teamcode.subsystems.ShooterController.ControlMode
 import org.junit.Assert.*
 import org.junit.Test
 import org.mockito.Mockito.*

@@ -28,18 +28,20 @@ encoder deltas from a fresh baseline without clearing timing statistics.
 
 ## Frame order and total-loop measurement
 
-`Robot.loop()` calls `DriverRobot.update()`, which reads inputs, computes drive
+NextFTC schedules `DriverRobot`'s default command, which reads inputs, computes drive
 and mechanism requests once, commits
 outputs, and publishes telemetry when due. A failed read or computation skips the
 normal output commit and runs shutdown. The total timer includes every phase and
-ends in `finally`; there is no command scheduler or component ordering to manage.
+ends in `finally`. The command owns all three subsystem requirements and performs
+the complete frame in order, so scheduling cannot separate a read from its write.
 
 Local regressions exercise this actual loop with deterministic clocks, and run
 the real Pedro/Foresight controller against hardware doubles. These checks verify
 ordering and calculations, not an achieved hardware loop frequency.
 
-FTC 12's iterative `OpMode` copies pending gamepad data before calling user code,
-so the driver uses those stable callback values directly. Diagnostic encoder
+NextFTC 0.3.0 runs inside `LinearOpMode`, whose gamepads can change during a frame.
+The driver samples used controls into two reused gamepads before computing.
+Diagnostic encoder
 reads and Pedro wheel mixing reuse fixed arrays. Encoder deltas have independent
 history so a new read cannot overwrite the previous frame. LQR settings retain
 their immutable configuration until a live tuning value changes; invalid settings
@@ -99,6 +101,10 @@ are built once and sent to both delegates through the value overload. Timing
 strings are cached for one second. Separate timing wrappers preserve the Driver
 Station and Panels update measurements. The display gate never skips a hardware
 frame or a control calculation.
+
+NextFTC also calls its standard Driver Station telemetry flush each loop. The SDK
+transmission interval still limits sends; our joined display is formatted and
+published only at the 50 ms gate. No per-session global telemetry backends are added.
 
 This uses the installed Panels telemetry 1.0.7 source: its formatting overload
 forwards formatting to each delegate, while its value overload accepts an already

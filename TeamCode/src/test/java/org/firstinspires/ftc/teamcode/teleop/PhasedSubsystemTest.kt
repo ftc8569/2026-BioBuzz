@@ -2,7 +2,7 @@ package org.firstinspires.ftc.teamcode.teleop
 
 import com.qualcomm.robotcore.hardware.*
 import com.qualcomm.robotcore.hardware.configuration.typecontainers.MotorConfigurationType
-import org.firstinspires.ftc.teamcode.control.ShooterController
+import org.firstinspires.ftc.teamcode.subsystems.ShooterController
 import org.firstinspires.ftc.teamcode.subsystems.*
 import org.junit.Assert.*
 import org.junit.Test

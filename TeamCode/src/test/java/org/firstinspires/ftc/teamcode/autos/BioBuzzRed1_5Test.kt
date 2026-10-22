@@ -13,7 +13,6 @@ import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.sin
 import org.firstinspires.ftc.robotcore.external.Telemetry
-import org.firstinspires.ftc.teamcode.autos.ShootCommand
 import org.firstinspires.ftc.teamcode.pedro.Constants
 import org.firstinspires.ftc.teamcode.subsystems.IntakeSubsystem
 import org.firstinspires.ftc.teamcode.subsystems.ShooterSubsystem

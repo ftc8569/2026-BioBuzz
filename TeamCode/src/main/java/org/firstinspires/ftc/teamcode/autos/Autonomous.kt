@@ -8,9 +8,9 @@ import com.pedropathing.math.Pose
 import com.pedropathing.paths.Path
 import com.qualcomm.robotcore.eventloop.opmode.Autonomous
 import java.util.function.LongSupplier
-import org.firstinspires.ftc.teamcode.control.ShooterController
-import org.firstinspires.ftc.teamcode.control.ShooterController.ControlMode
-import org.firstinspires.ftc.teamcode.hardware.SafeHardware
+import org.firstinspires.ftc.teamcode.subsystems.ShooterController
+import org.firstinspires.ftc.teamcode.subsystems.ShooterController.ControlMode
+import org.firstinspires.ftc.teamcode.teleop.SafeHardware
 import org.firstinspires.ftc.teamcode.subsystems.IntakeFeed
 import org.firstinspires.ftc.teamcode.subsystems.IntakeSubsystem
 import org.firstinspires.ftc.teamcode.subsystems.ShooterSubsystem

@@ -1,8 +1,9 @@
 package org.firstinspires.ftc.teamcode.control
 
+import org.firstinspires.ftc.teamcode.subsystems.FlywheelLqr
+import org.firstinspires.ftc.teamcode.subsystems.FlywheelLqrConfig
+
 import kotlin.math.*
-import org.firstinspires.ftc.teamcode.control.FlywheelLqr
-import org.firstinspires.ftc.teamcode.control.FlywheelLqrConfig
 import org.junit.Assert.*
 import org.junit.Test
 

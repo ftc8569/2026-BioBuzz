@@ -2,7 +2,7 @@
 
 The velocity shooter uses a one-state discrete LQR instead of FTCLib PIDF. Flywheel 1's measured RPM is the state; both motors receive the same voltage command. Manual shooting, reverse, preset RPM conversion, 1% readiness tolerance and readiness latching are preserved. TeleOp uses its existing once-per-frame cached hardware inputs and final output commit. No additional hardware reads or robot-side characterization routines were added.
 
-`control/Controllers.kt` contains the hardware-free `ShooterController`, LQR math,
+`subsystems/ShooterSubsystem.kt` contains the hardware-free `ShooterController`, LQR math,
 and live tuning. `subsystems/ShooterSubsystem.kt` owns the motors, blocker and
 sampled feedback. Both auto and TeleOp call the same subsystem API.
 
