@@ -1,4 +1,4 @@
-package org.firstinspires.ftc.teamcode.diagnostics
+package org.firstinspires.ftc.teamcode.teleop
 
 import com.bylazar.telemetry.JoinedTelemetry
 import com.qualcomm.hardware.lynx.LynxModule
@@ -11,10 +11,8 @@ import com.qualcomm.robotcore.hardware.Servo
 import com.qualcomm.robotcore.util.RobotLog
 import java.util.Locale
 import org.firstinspires.ftc.robotcore.external.Telemetry
-import org.firstinspires.ftc.teamcode.subsystems.ShooterController
-import org.firstinspires.ftc.teamcode.subsystems.ShooterControls
-import org.firstinspires.ftc.teamcode.teleop.SafeHardware
-import org.firstinspires.ftc.teamcode.subsystems.ShooterSubsystem
+
+// Telemetry and diagnostic OpModes. Called by the shared Robot loop.
 
 internal enum class LoopStage(val label: String) {
     LOOP_INTERVAL("Loop interval"),

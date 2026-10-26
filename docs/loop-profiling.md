@@ -87,6 +87,9 @@ The explicit hub bulk refresh bears the cost of fetching motor data; subsequent
 encoder and velocity reads use that snapshot. Voltage polling runs
 concurrently, so its duration is **not** part of the main loop's measured work,
 although shared hub communication can still delay main-thread hardware calls.
+The existing worker samples voltage at 1 Hz while the shooter is idle and 4 Hz
+while powered, checking every 250 ms for activity. This reduces idle sensor
+transactions without putting voltage reads on the driver-control thread.
 
 The profiler holds its counter lock only while recording or copying statistics,
 never while accessing hardware. It is enabled by TeleOp; other OpModes retain
@@ -94,7 +97,7 @@ their existing behavior without per-section profiling.
 
 ## Joined display output
 
-`diagnostics/Telemetry.kt` owns the cached shooter renderer and creates one Panels `JoinedTelemetry` for the lifetime
+`teleop/Telemetry.kt` owns the cached shooter renderer and creates one Panels `JoinedTelemetry` for the lifetime
 of the driver object. A 50 ms gate runs before building telemetry, so formatting
 and both destination updates are skipped between display frames. Formatted values
 are built once and sent to both delegates through the value overload. Timing

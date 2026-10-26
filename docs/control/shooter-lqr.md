@@ -2,8 +2,8 @@
 
 The velocity shooter uses a one-state discrete LQR instead of FTCLib PIDF. Flywheel 1's measured RPM is the state; both motors receive the same voltage command. Manual shooting, reverse, preset RPM conversion, 1% readiness tolerance and readiness latching are preserved. TeleOp uses its existing once-per-frame cached hardware inputs and final output commit. No additional hardware reads or robot-side characterization routines were added.
 
-`subsystems/ShooterSubsystem.kt` contains the hardware-free `ShooterController`, LQR math,
-and live tuning. `subsystems/ShooterSubsystem.kt` owns the motors, blocker and
+`teleop/Shooter.kt` contains the hardware-free `ShooterController`, LQR math,
+and live tuning, along with the motors, blocker and
 sampled feedback. Both auto and TeleOp call the same subsystem API.
 
 ## Model and controller
@@ -37,6 +37,6 @@ An inaccurate kV can leave steady-state RPM error because there is no integrator
 
 ## Local verification
 
-Tests compare the gain with an independent iterative Riccati solution and simulate spin-up and a shot disturbance with varying loop intervals and 10–14 V saturation. Integration tests cover voltage compensation, live configuration, invalid model/feedback, manual and reverse operation, mode changes, autonomous shooting, and cached hardware boundaries. Simulation verifies the assumed model; no code was deployed or executed on the robot.
+The historical regression suite, run from a temporary folder during branch integration, compares the gain with an independent iterative Riccati solution and simulate spin-up and a shot disturbance with varying loop intervals and 10–14 V saturation. Integration tests cover voltage compensation, live configuration, invalid model/feedback, manual and reverse operation, mode changes, autonomous shooting, and cached hardware boundaries. Simulation verifies the assumed model; no code was deployed or executed on the robot.
 
 References: [WPILib flywheel state-space formulation](https://docs.wpilib.org/en/latest/docs/software/advanced-controls/state-space/state-space-intro.html), [MIT discrete-time LQR derivation](https://underactuated.csail.mit.edu/lqr.html).

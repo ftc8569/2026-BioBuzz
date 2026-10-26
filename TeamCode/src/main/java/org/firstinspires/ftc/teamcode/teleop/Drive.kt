@@ -1,4 +1,4 @@
-package org.firstinspires.ftc.teamcode.subsystems
+package org.firstinspires.ftc.teamcode.teleop
 
 import com.pedropathing.drivetrain.DrivePowers
 import com.pedropathing.drivetrain.Drivetrain
@@ -12,8 +12,9 @@ import com.qualcomm.robotcore.hardware.HardwareMap
 import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.sin
-import org.firstinspires.ftc.teamcode.teleop.outputWrites
 import org.firstinspires.ftc.teamcode.pedro.Constants
+
+// Drive and shooting position hold. Called by the shared Robot loop.
 
 class DriveSubsystem(hardwareMap: HardwareMap) {
     private val motors = listOf("driveFL", "driveFR", "driveBL", "driveBR")
@@ -169,5 +170,77 @@ internal class ShootingDriveHold(private val follower: Follower) {
     fun stop() {
         follower.stop()
         active = false
+    }
+}
+
+/** Hive offset from shreyas-josyula: three inches right, then 53.369 inches forward. */
+internal fun hiveApproach(hive: Pose): Pose = Pose(
+    hive.x() + 3.0 * sin(hive.heading()) + 53.369 * cos(hive.heading()),
+    hive.y() - 3.0 * cos(hive.heading()) + 53.369 * sin(hive.heading()), hive.heading()
+)
+
+/** Nonblocking pollen sweep / hive approach. Uses the loop's pose, never another hardware read. */
+internal class PollenMacro(private val radius: Double = 10.0, private val loops: Int = 8) {
+    init { require(radius.isFinite() && radius > 0.0); require(loops in 0..100) }
+    private var points = emptyList<Pose>()
+    private var index = 0
+    var collecting = false
+        private set
+    val active: Boolean get() = index < points.size
+
+    fun start(pose: Pose) {
+        requireFinite(pose)
+        var centerX = pose.x()
+        val path = mutableListOf<Pose>()
+        repeat(loops) {
+            path += Pose(centerX + radius, pose.y(), pose.heading())
+            for (point in 1..16) {
+                val angle = Math.PI * point / 16.0
+                path += Pose(centerX + radius * cos(angle), pose.y() + radius * sin(angle), pose.heading())
+            }
+            centerX -= radius
+        }
+        points = path
+        index = 0
+        collecting = active
+    }
+
+    fun approach(hive: Pose) {
+        requireFinite(hive)
+        points = listOf(hiveApproach(hive))
+        index = 0
+        collecting = false
+    }
+
+    fun cancel() { points = emptyList(); index = 0; collecting = false }
+
+    /** Return true when this frame owns the drive request, including its final zero. */
+    fun update(pose: Pose, drive: DriveSubsystem): Boolean {
+        if (!active) return false
+        requireFinite(pose)
+        while (active) {
+            val target = points[index]
+            val dx = target.x() - pose.x()
+            val dy = target.y() - pose.y()
+            val distance = kotlin.math.hypot(dx, dy)
+            val delta = target.heading() - pose.heading()
+            val error = kotlin.math.atan2(sin(delta), cos(delta))
+            if (distance <= 1.0 && abs(error) <= 0.035) { index++; continue }
+            val speed = if (distance <= 1.0) 0.0 else (distance * 0.06).coerceIn(0.12, 0.35)
+            val scale = if (distance > 0.0) speed / distance else 0.0
+            val forward = (cos(pose.heading()) * dx + sin(pose.heading()) * dy) * scale
+            val strafe = (sin(pose.heading()) * dx - cos(pose.heading()) * dy) * scale
+            drive.drive(forward, strafe, (-0.8 * error).coerceIn(-0.35, 0.35))
+            return true
+        }
+        cancel()
+        drive.stop()
+        return true
+    }
+
+    private fun requireFinite(pose: Pose) {
+        require(pose.x().isFinite() && pose.y().isFinite() && pose.heading().isFinite()) {
+            "Drive assist requires a finite pose"
+        }
     }
 }

@@ -1,12 +1,13 @@
-package org.firstinspires.ftc.teamcode.subsystems
+package org.firstinspires.ftc.teamcode.teleop
 
 import com.qualcomm.robotcore.hardware.DcMotor
 import com.qualcomm.robotcore.hardware.DcMotorEx
 import com.qualcomm.robotcore.hardware.DcMotorSimple
 import com.qualcomm.robotcore.hardware.HardwareMap
 import kotlin.math.abs
-import org.firstinspires.ftc.teamcode.subsystems.ShooterController.ControlMode
-import org.firstinspires.ftc.teamcode.teleop.outputWrites
+import org.firstinspires.ftc.teamcode.teleop.ShooterController.ControlMode
+
+// Intake and feed safety. Called by the shared Robot loop.
 
 class IntakeSubsystem(hardwareMap: HardwareMap) {
     private val motors = listOf("intake1", "intake2")

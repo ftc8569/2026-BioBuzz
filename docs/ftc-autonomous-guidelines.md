@@ -7,10 +7,17 @@ translated against the installed library, rather than copied directly.
 ## Lifecycle and failure handling
 
 Every match auto uses AutoOpMode to initialize its devices and route before becoming READY.
+The original eight autos and the shared lifecycle live in `autos/Autonomous.kt`.
+`MainAutos.kt` adds eight imported sequence autos; `PreloadAutos.kt` adds four
+preload/park autos and a timed move, giving 21 entries. See
+[branch integration](branch-integration.md) for route provenance and limitations.
 START only runs a routine after READY. Basic autos advance through the measured
 speed gate, shared 100 ms blocker delay, two-second feed, and path following
 without blocking waits. The longer routine keeps its one-second feed per shot;
 backup routines drive without shooter initialization.
+Backup routines shut down after Pedro finishes following; the longer collection
+routine shuts down after its whole scheduled sequence completes. DONE loops do
+not poll hardware or apply powered position holding after parking.
 A runtime or linkage failure enters FAILED, preserves the original stack trace,
 and displays the phase and exception as `Auto error`. FAILED cannot resume by
 pressing START. Fix the reported cause and reinitialize.
@@ -58,14 +65,18 @@ Local checks:
 ./gradlew :TeamCode:testDebugUnitTest :TeamCode:assembleDebug --console=plain
 ```
 
-The Basic auto tests cover both exported routes and shooting time, real Pedro and
-LQR startup with hardware doubles, missing-device initialization, START failures,
-and a loop fault combined with a failed stop write. AutoLifecycleIntegrationTest also runs all eight match autos with real Pedro code, injecting a Pinpoint failure and failed stop writes. Preserve those distinctions when interpreting results.
+The focused tests in `teamcode.regression` cover all new entry points, real
+Pedro/LQR lifecycle failures, independent shutdown, 30-second MAIN termination,
+forced parking, blue/red transforms, speed-gated feed timing, and timed-drive
+partial initialization. Driver regressions cover saved hives, macro cancellation,
+shooting handoff, one physical pose read per loop, and reduced idle voltage reads.
 
-DriverControlsIntegrationTest exercises both strafing directions, forward/reverse,
-turning, normalized mixed input, shooting-hold handoff, and saved-hive aiming with
-the real subsystems and Pedro against fake devices. These are local logic checks,
-not confirmation of wheel orientation, encoder wiring or field performance.
+The previous staged test deletions are preserved. The earlier 118 tests were
+adapted to the consolidated packages in a temporary validation folder for this
+integration comparison. Those include existing drive/control mappings, original
+auto lifecycle faults, controller math, telemetry, and NextFTC lifecycle checks.
+All evidence is local with fake hardware; no code was installed, launched or run
+on a robot. Sensor-read counts do not establish measured battery runtime.
 
 ## Primary references reviewed
 
@@ -81,7 +92,7 @@ not confirmation of wheel orientation, encoder wiring or field performance.
 
 ## Shared intake and compact TeleOp
 
-`subsystems/IntakeSubsystem.kt` contains `IntakeFeed`, used by Robot, the Basic autos and
+`teleop/Intake.kt` contains `IntakeFeed`, used by Robot, the Basic autos and
 ShootCommand. It applies the same speed gate, 0.6 feed power and 100 ms opening
 delay. Basic feed timing begins when intake power actually starts, keeping two
 full seconds of transfer. The longer routine retains its one-second transfer.

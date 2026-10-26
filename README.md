@@ -4,21 +4,42 @@ This repository contains the public FTC SDK for the BIOBUZZ (2026-2027) competit
 
 ## Start reading the robot code here
 
-TeleOp uses **five source files**, with each subsystem in its own file:
+TeleOp is organized into **five focused files** in `teleop/`. Start in
+**`Robot.kt`** for the controls, hardware setup and match loop:
 
 | File | Responsibility |
 | --- | --- |
-| `teleop/Robot.kt` | NextFTC entry, constructor wiring, driver loop and shutdown |
-| `subsystems/DriveSubsystem.kt` | Drive motors, Pedro adapter and shooting hold |
-| `subsystems/IntakeSubsystem.kt` | Intake, collection assist and shared auto/TeleOp feeding |
-| `subsystems/ShooterSubsystem.kt` | Flywheels, blocker, LQR, presets, voltage and motor profile |
-| `diagnostics/Telemetry.kt` | Joined telemetry, timing and diagnostic OpModes |
+| `teleop/Robot.kt` | Driver controls, hardware setup, match loop and safe shutdown |
+| `teleop/Drive.kt` | Mecanum drive, Pedro adapter, position hold and hive/pollen assists |
+| `teleop/Intake.kt` | Intake, collection assist, feed readiness and blocker delay |
+| `teleop/Shooter.kt` | Flywheels, blocker, LQR, presets and battery sampling |
+| `teleop/Telemetry.kt` | Driver Station/Panel displays, loop timings and diagnostic OpModes |
 
-`Controllers.kt` and `RobotHardware.kt` were removed; their helpers now live with
-what they control. Small classes keep the LQR math, hardware and driver input
-separate inside each file. All production lines stay within 100 columns. The
-shooter and diagnostics files are longer because they retain the existing model,
-live tuning, timing data and diagnostic OpModes.
+Six other production files contain autonomous routines and supporting tools:
+
+| File | Responsibility |
+| --- | --- |
+| `autos/Autonomous.kt` | Eight original match autos, shooting command and guarded lifecycle |
+| `autos/MainAutos.kt` | Eight MAIN route autos imported from ri5w-autos |
+| `autos/PreloadAutos.kt` | Four preload parking autos and MoveForwardLeft |
+| `pedro/Constants.java` | Installed Pedro configuration and existing calibration |
+| `pedro/Tuning.java` | Pedro tuning and test OpModes |
+| `vision/HiveVision.kt` | Optional hive vision utility |
+
+Files are under `TeamCode/src/main/java/org/firstinspires/ftc/teamcode/`.
+Tests stay separate under `TeamCode/src/test/`; SDK examples remain untouched.
+TeleOp tests use the `org.firstinspires.ftc.teamcode.regression` package, so the
+`teleop` package contains exactly the five robot source files listed above.
+There are eleven production source files total and 21 match autonomous entries. Existing classes and comments keep
+driver decisions, hardware writes and LQR mathematics independently testable.
+For autonomous edits, start with `Autonomous.kt`; each route has its own class
+and keeps its Driver Station name. See [branch integration](docs/branch-integration.md)
+for imported routes, subsystem mapping, settings retained, and sensor limitations.
+
+The structure was reviewed against RoboKnights 8569's
+[DECODE Robot.kt](https://github.com/ftc8569/2025-Decode/blob/main/TeamCode/src/main/java/org/firstinspires/ftc/teamcode/common/Robot.kt),
+which centralizes controls and coordinates hardware and subsystems. This project
+retains its installed NextFTC and Pedro 3 APIs and its own control mappings.
 
 NextFTC v2 **0.3.0** discovers `RobotSession` without opening hardware. Every INIT
 creates fresh hardware and a `DriverRobot` mechanism. NextFTC schedules its default
@@ -27,15 +48,8 @@ read → compute → write → report frame. The `afterEnd` hook stops devices a
 cache modes even after a loop failure. Gamepad values and encoder history use
 reused buffers; LQR settings are revalidated only when changed.
 
-Outside these five files are five auto files, two Pedro configuration/tuning files,
-and the existing `vision/HiveVision.kt` utility: **13 production files total**.
 `pedro/Tuning.java` preserves Mecanum, Pinpoint, Foresight and Tests. Blocker and
-shooter diagnostics retain their Driver Station names in `diagnostics/Telemetry.kt`.
-
-Autos live in `autos/`: `AutoOpMode.java` owns readiness and failure handling;
-`BioBuzzAuto.java` owns Basic shoot-and-park; `BioBuzzRed1_5.java` owns the longer
-routine; `BioBuzzBackupAuto.java` owns backup driving; `Autonomous.kt` groups
-alliance variants and the shared shoot command.
+shooter diagnostics retain their Driver Station names in `teleop/Telemetry.kt`.
 
 TeleOp retains its existing Driver Station name, **BioBuzz NextFTC Kotlin TeleOp**,
 so drivers can select the same entry. It now uses the current
@@ -44,18 +58,60 @@ The shared intake and shooter implementations are also used by the existing auto
 
 All shooting modes use the same **0.6 intake feed power** and **100 ms blocker
 opening delay**. Basic autos feed for two full seconds after that delay; the longer
-auto feeds for one second. Collection stays at its existing requested power.
+auto feeds for one second. The new MAIN autos feed for 1.5 seconds per ball, capped
+at three balls, with a seven-second shot timeout. Collection keeps its route power.
 Shooter preset remains **0.72**, with the existing LQR tuning and routes.
+
+### Driver controls
+
+| Input | Behavior |
+| --- | --- |
+| G1 left stick / right stick X | Drive / turn |
+| Hold G1 right bumper | LQR shooting with position hold and speed-gated feeding |
+| Hold G1 Y | Manual shooting with position hold; overrides right bumper |
+| Hold G1 left bumper | Reverse flywheels; takes priority over shooting |
+| G1 right / left trigger | Forward / reverse intake |
+| Hold G1 A | Stop intake, including automatic feeding and collection assist |
+| Either D-pad up / down | Adjust shooter preset by 0.005 per press |
+| Either B | Open blocker in manual shooter mode |
+| G1 X, then G2 Y | Save selected hive position, then aim at it; manual turning cancels aim |
+| G2 D-pad left / right | Select blue / red hive (separate saved positions) |
+| G2 X | Approach the selected saved hive |
+| G2 A | Toggle pollen sweep and collection; sticks, shooting/reverse or G1 A cancel |
+| G1 left-stick click | Toggle collection assist; initially on |
+| G1 right-stick click | Toggle detailed telemetry; initially on |
+
+### Battery and hardware traffic
+
+Completed backup and collection autos now shut down their outputs and stop polling,
+as Basic autos already did. This prevents continued powered position holding after
+parking. During shooting, position hold and controller tuning remain unchanged.
+Voltage sampling uses the existing background worker: **1 Hz while idle, 4 Hz while
+the flywheels are powered**, with active sampling restored on the next 250 ms worker
+tick. Ten seconds of simulated idle time makes 10 sensor reads instead of 40.
+This reduces sensor traffic; it is not a measured battery-runtime improvement.
+
+Motor and servo output caches still skip identical commands, and shutdown always
+forces zero to every motor. An ordinary shooter-off request now also sends zero
+without first reading its encoders. Bulk-cache freshness, the 50 ms telemetry
+interval, routes, speeds, and button behavior are retained.
 
 Local verification only (no robot connection required):
 
 ```sh
-./gradlew :TeamCode:testDebugUnitTest :TeamCode:assembleDebug --console=plain
+./gradlew :TeamCode:testDebugUnitTest :TeamCode:assembleDebug :TeamCode:lintDebug --console=plain
 ```
 
-The build uses Gradle **9.5.1**, Kotlin **2.4.20**, and Android plugin **8.13.2**.
-Gradle 9.6+ removes an API used by Android plugin 8.x; see the
-[Gradle compatibility note](https://docs.gradle.org/9.7.0/userguide/upgrading_version_9.html#agp_8x_incompatible).
+The build uses Gradle **9.7.0**, Kotlin **2.4.21**, Android plugin **9.3.3**, and
+JDK **17**. The wrapper checksum is pinned. See [build compatibility and validation](docs/branch-integration.md#build-and-validation).
+The two regression files stay outside TeleOp. The prior staged test deletions are
+preserved; the earlier 118 tests were also run from a temporary validation folder.
+Local verification on 2026-10-25: **133 tests passed** in the combined comparison
+suite (118 previous + 15 new). The normal checkout command also passed all 15
+retained tests, APK assembly and lint in offline mode. Lint reports **0 errors
+and 17 warnings** (existing tuning-label locale usage, dependency/native-library
+notices, and an unused resource). The APK contains all 21 auto classes and TeleOp.
+No robot code was deployed or run; battery runtime and field behavior remain unmeasured.
 
 See [autonomous reliability](docs/ftc-autonomous-guidelines.md),
 [shooter control](docs/control/shooter-lqr.md), and
@@ -89,7 +145,7 @@ Load 0.2.4 calls `Project.exec`, which was removed in Gradle 9. See the
 
 TeamCode includes Panels with OpMode control, telemetry, configurable variables,
 graphs, and field drawing. Camera plugins are excluded. The project uses Kotlin
-2.4.20 and FTC SDK 12.0.0 as required by the current
+2.4.21 and FTC SDK 12.0.0 as required by the current
 [Panels setup guide](https://panels.bylazar.com/docs/com.bylazar.docs/Prerequisites/).
 
 Install the full app after this dependency change using

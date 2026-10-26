@@ -1,4 +1,4 @@
-package org.firstinspires.ftc.teamcode.subsystems
+package org.firstinspires.ftc.teamcode.teleop
 
 import com.bylazar.configurables.annotations.Configurable
 import com.qualcomm.robotcore.hardware.*
@@ -13,12 +13,9 @@ import kotlin.math.expm1
 import kotlin.math.hypot
 import kotlin.math.roundToInt
 import org.firstinspires.ftc.robotcore.external.navigation.Rotation
-import org.firstinspires.ftc.teamcode.diagnostics.LoopProfiler
-import org.firstinspires.ftc.teamcode.diagnostics.LoopStage
-import org.firstinspires.ftc.teamcode.diagnostics.LoopTiming
-import org.firstinspires.ftc.teamcode.diagnostics.measureOrRun
-import org.firstinspires.ftc.teamcode.teleop.outputWrites
-import org.firstinspires.ftc.teamcode.subsystems.ShooterController.ControlMode
+import org.firstinspires.ftc.teamcode.teleop.ShooterController.ControlMode
+
+// Shooter, LQR and battery voltage. Called by the shared Robot loop.
 
 /** Owns two flywheels and their blocker; shot decisions live in the shared controller. */
 class ShooterSubsystem(hardwareMap: HardwareMap, nanoTime: () -> Long = System::nanoTime) {
@@ -30,7 +27,7 @@ class ShooterSubsystem(hardwareMap: HardwareMap, nanoTime: () -> Long = System::
         FlywheelFeedback(it.motorType.ticksPerRev, it.motorType.achieveableMaxTicksPerSecond)
     }
     internal val batteryVoltage =
-        BatteryVoltageMonitor(hardwareMap.getAll(VoltageSensor::class.java))
+        BatteryVoltageMonitor(hardwareMap.getAll(VoltageSensor::class.java), nanoTime)
     internal var loopProfiler: LoopProfiler? = null
         set(value) { field = value; control.profiler = value; batteryVoltage.profiler = value }
     private var phasedIo = false
@@ -64,6 +61,7 @@ class ShooterSubsystem(hardwareMap: HardwareMap, nanoTime: () -> Long = System::
 
     internal fun commitOutputs(force: Boolean = false) {
         // Forced shutdown attempts every output, even if a motor or servo write fails.
+        batteryVoltage.active = control.normalizedPower != 0.0
         outputWrites(force, 2) { group ->
             val stage = if (group == 0) LoopStage.SHOOTER_OUTPUT else LoopStage.BLOCKER_OUTPUT
             loopProfiler.measureOrRun(stage) {
@@ -92,7 +90,8 @@ class ShooterSubsystem(hardwareMap: HardwareMap, nanoTime: () -> Long = System::
     }
 
     fun setFlywheelPower(power: Double) {
-        if (!phasedIo) beginFrame()
+        // Stopping needs no RPM read. Send zero even if an encoder has become unavailable.
+        if (!phasedIo && power.isFinite() && power != 0.0) beginFrame()
         control.setFlywheelPower(power)
         flushImmediate()
     }
@@ -355,11 +354,16 @@ class ShooterLqrTuning {
     }
 }
 
-/** Hardware reads stay on one worker; control loops only read the volatile snapshot. */
-internal class BatteryVoltageMonitor(private val sensors: List<VoltageSensor>) : AutoCloseable {
+/** Reuse the existing voltage worker; slow idle reads without delaying driver controls. */
+internal class BatteryVoltageMonitor(
+    private val sensors: List<VoltageSensor>,
+    private val nanoTime: () -> Long = System::nanoTime
+) : AutoCloseable {
     @Volatile var voltage = 12.0
         private set
     @Volatile internal var profiler: LoopProfiler? = null
+    @Volatile var active = false
+    private var lastPoll: Long? = null
     private var executor: ScheduledExecutorService? = null
     private var closed = false
 
@@ -368,8 +372,18 @@ internal class BatteryVoltageMonitor(private val sensors: List<VoltageSensor>) :
         executor = Executors.newSingleThreadScheduledExecutor { task ->
             Thread(task, "BioBuzz battery voltage").apply { isDaemon = true }
         }.also {
-            it.scheduleWithFixedDelay({ pollOnce() }, 0, 250, TimeUnit.MILLISECONDS)
+            it.scheduleWithFixedDelay({ pollIfDue() }, 0, 250, TimeUnit.MILLISECONDS)
         }
+    }
+
+    internal fun pollIfDue() {
+        val now = nanoTime()
+        // Idle telemetry needs only 1 Hz; powered flywheels keep the original 4 Hz compensation.
+        // Check every 250 ms so pressing shoot does not wait for the slower idle interval.
+        val interval = if (active) 250_000_000L else 1_000_000_000L
+        if (lastPoll?.let { now - it < interval } == true) return
+        lastPoll = now
+        pollOnce()
     }
 
     internal fun pollOnce() = profiler.measureOrRun(LoopStage.VOLTAGE_POLL) {
