@@ -99,9 +99,9 @@ internal class DriverRobot(
     private val approachButton = PressEdge()
     private val pollenButton = PressEdge()
     private val pollen = PollenMacro()
-    private val savedHives = arrayOfNulls<Pose>(2)
-    private var hiveAlliance = 0 // Blue preserves the existing default.
-    private val hiveName: String get() = if (hiveAlliance == 0) "Blue" else "Red"
+    private val navigation = hardware.location
+    private var hiveAlliance = RobotLocationSubsystem.Alliance.BLUE
+    private val hiveName: String get() = if (hiveAlliance == RobotLocationSubsystem.Alliance.BLUE) "Blue" else "Red"
     private val loopTiming = LoopTiming(nanoTime)
     private val intakeFeed = IntakeFeed(nanoTime)
     private val driveIntakeControls = DriveIntakeControls()
@@ -110,9 +110,7 @@ internal class DriverRobot(
     private val previousEncoders = IntArray(4)
     private var hasEncoderBaseline = false
     private val encoderDeltas = IntArray(4)
-    private var savedHive: Pose?
-        get() = savedHives[hiveAlliance]
-        set(value) { savedHives[hiveAlliance] = value }
+    private val savedHive: Pose? get() = navigation.savedHive(hiveAlliance)
     private var targetHeading: Double? = null
     private var aiming = false
     private var headingError: Double? = null
@@ -162,7 +160,8 @@ internal class DriverRobot(
             }
             hasEncoderBaseline = true
         }
-        val selected = if (g2.dpad_left) 0 else if (g2.dpad_right) 1 else hiveAlliance
+        val selected = if (g2.dpad_left) RobotLocationSubsystem.Alliance.BLUE
+            else if (g2.dpad_right) RobotLocationSubsystem.Alliance.RED else hiveAlliance
         if (selected != hiveAlliance) {
             hiveAlliance = selected
             aiming = false
@@ -171,15 +170,13 @@ internal class DriverRobot(
         }
         if (saveButton.pressed(g1.x)) {
             pollen.cancel()
-            savedHive = location
+            navigation.saveHive(hiveAlliance)
             targetHeading = null
             aiming = false
         }
         if (aimButton.pressed(g2.y)) {
             pollen.cancel()
-            targetHeading = savedHive?.let {
-                atan2(it.y() - location.y(), it.x() - location.x())
-            }
+            targetHeading = navigation.headingToHive(hiveAlliance)
             aiming = targetHeading != null
         }
         val approachPressed = approachButton.pressed(g2.x)
@@ -316,11 +313,11 @@ internal class RobotHardware(
     val shooter: ShooterSubsystem
     val hold: ShootingDriveHold
     private val pinpoint: PinpointLocalizer
-    private val snapshot = SnapshotLocalizer()
+    val location = RobotLocationSubsystem()
     private val driveMotors: List<DcMotor>
     private val encoders = IntArray(4)
     private val inputs: BulkInputReader
-    val pose: Pose get() = snapshot.pose()
+    val pose: Pose get() = location.pose
     var encoderPositions: IntArray? = null
         private set
 
@@ -337,7 +334,7 @@ internal class RobotHardware(
             safety.onStop { shooter.stopVoltagePolling() }
             pinpoint = PinpointLocalizer(map, Constants.localizerConfig)
             val drivetrain = BufferedMecanum(drive::requestWheelPowers)
-            hold = ShootingDriveHold(Constants.create(snapshot, drivetrain))
+            hold = ShootingDriveHold(Constants.create(location.localizer, drivetrain))
             safety.onStop { hold.stop() }
             driveMotors = SafeHardware.DRIVE_NAMES.map { map.get(DcMotor::class.java, it) }
             val hubs = map.getAll(LynxModule::class.java)
@@ -352,7 +349,10 @@ internal class RobotHardware(
     }
 
     fun start() {
-        profiler.measure(LoopStage.LOCATION_RESET) { pinpoint.setPose(Pose.zero()) }
+        profiler.measure(LoopStage.LOCATION_RESET) {
+            pinpoint.setPose(Pose.zero())
+            location.reset()
+        }
     }
 
     fun read(diagnostics: Boolean) = profiler.measure(LoopStage.READ_INPUTS) {
@@ -364,7 +364,7 @@ internal class RobotHardware(
         } else null
         profiler.measure(LoopStage.PINPOINT) {
             pinpoint.update()
-            snapshot.capture(pinpoint.state())
+            location.capture(pinpoint.state())
         }
     }
 
@@ -453,7 +453,7 @@ class SafeHardware {
 }
 
 /** Normal commits fail fast; forced shutdown attempts every device before rethrowing. */
-internal fun outputWrites(force: Boolean, count: Int, write: (Int) -> Unit) {
+internal inline fun outputWrites(force: Boolean, count: Int, write: (Int) -> Unit) {
     var failure: Throwable? = null
     for (index in 0 until count) {
         try { write(index) } catch (t: Throwable) {

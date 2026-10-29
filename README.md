@@ -10,12 +10,12 @@ TeleOp is organized into **five focused files** in `teleop/`. Start in
 | File | Responsibility |
 | --- | --- |
 | `teleop/Robot.kt` | Driver controls, hardware setup, match loop and safe shutdown |
-| `teleop/Drive.kt` | Mecanum drive, Pedro adapter, position hold and hive/pollen assists |
+| `teleop/Drive.kt` | Drive and location subsystems, Pedro adapter, position hold and hive/pollen assists |
 | `teleop/Intake.kt` | Intake, collection assist, feed readiness and blocker delay |
 | `teleop/Shooter.kt` | Flywheels, blocker, LQR, presets and battery sampling |
 | `teleop/Telemetry.kt` | Driver Station/Panel displays, loop timings and diagnostic OpModes |
 
-Six other production files contain autonomous routines and supporting tools:
+The supporting code contains autonomous routines, vision and Pedro tools:
 
 | File | Responsibility |
 | --- | --- |
@@ -23,15 +23,15 @@ Six other production files contain autonomous routines and supporting tools:
 | `autos/MainAutos.kt` | Eight MAIN route autos imported from ri5w-autos |
 | `autos/PreloadAutos.kt` | Four preload parking autos and MoveForwardLeft |
 | `pedro/Constants.java` | Installed Pedro configuration and existing calibration |
-| `pedro/Tuning.java` | Pedro tuning and test OpModes |
-| `vision/HiveVision.kt` | Optional hive vision utility |
+| `pedro/Tuning.java` | Nine registered Pedro tuning/test procedures; shared Mecanum, Pinpoint, Foresight and Tests |
+| `pedro/procedures/` (five files) | Restored OTOS, OctoQuad, two-wheel, three-wheel and three-wheel + IMU tuners |
+| `vision/HiveVision.kt` | Optional VisionSubsystem, camera lifecycle and hive solver |
 
 Files are under `TeamCode/src/main/java/org/firstinspires/ftc/teamcode/`.
-Tests stay separate under `TeamCode/src/test/`; SDK examples remain untouched.
-TeleOp tests use the `org.firstinspires.ftc.teamcode.regression` package, so the
-`teleop` package contains exactly the five robot source files listed above.
-There are eleven production source files total and 21 match autonomous entries. Existing classes and comments keep
-driver decisions, hardware writes and LQR mathematics independently testable.
+The `teleop` directory still contains exactly the five files listed above.
+There are sixteen production source files total and 21 match autonomous entries.
+The removed test files remain deleted; local regression validation uses an external
+source folder. Existing classes and comments keep driver decisions, hardware writes and LQR mathematics independently testable.
 For autonomous edits, start with `Autonomous.kt`; each route has its own class
 and keeps its Driver Station name. See [branch integration](docs/branch-integration.md)
 for imported routes, subsystem mapping, settings retained, and sensor limitations.
@@ -48,8 +48,14 @@ read → compute → write → report frame. The `afterEnd` hook stops devices a
 cache modes even after a loop failure. Gamepad values and encoder history use
 reused buffers; LQR settings are revalidated only when changed.
 
-`pedro/Tuning.java` preserves Mecanum, Pinpoint, Foresight and Tests. Blocker and
-shooter diagnostics retain their Driver Station names in `teleop/Telemetry.kt`.
+`pedro/Tuning.java` registers all nine procedures with the installed Pedro 3 scanner.
+See [Pedro tuning and subsystem map](docs/pedro-tuning.md) for the restored branch
+files and hardware choices. The current Pinpoint configuration and calibration are retained.
+Blocker and shooter motor diagnostics keep their names. `Shooter Tuning` reuses
+the match LQR/manual controls with live settings and safe INIT/STOP. See the
+[shooter controls and tuning guide](docs/control/shooter-lqr.md#driver-controls-and-manual-tuning).
+The optional `Vision Diagnostic`
+lives in `teleop/Telemetry.kt`; match TeleOp does not start the camera.
 
 TeleOp retains its existing Driver Station name, **BioBuzz NextFTC Kotlin TeleOp**,
 so drivers can select the same entry. It now uses the current
@@ -96,21 +102,19 @@ forces zero to every motor. An ordinary shooter-off request now also sends zero
 without first reading its encoders. Bulk-cache freshness, the 50 ms telemetry
 interval, routes, speeds, and button behavior are retained.
 
-Local verification only (no robot connection required):
+Local build and lint verification (no robot connection required):
 
 ```sh
-./gradlew :TeamCode:testDebugUnitTest :TeamCode:assembleDebug :TeamCode:lintDebug --console=plain
+./gradlew :TeamCode:assembleDebug :TeamCode:lintDebug --console=plain
 ```
 
 The build uses Gradle **9.7.0**, Kotlin **2.4.21**, Android plugin **9.3.3**, and
 JDK **17**. The wrapper checksum is pinned. See [build compatibility and validation](docs/branch-integration.md#build-and-validation).
-The two regression files stay outside TeleOp. The prior staged test deletions are
-preserved; the earlier 118 tests were also run from a temporary validation folder.
-Local verification on 2026-10-25: **133 tests passed** in the combined comparison
-suite (118 previous + 15 new). The normal checkout command also passed all 15
-retained tests, APK assembly and lint in offline mode. Lint reports **0 errors
-and 17 warnings** (existing tuning-label locale usage, dependency/native-library
-notices, and an unused resource). The APK contains all 21 auto classes and TeleOp.
+The removed tests remain deleted. The external validation suite exercises the
+installed Pedro/NextFTC/LQR code with fake hardware, plus branch route/driver
+regressions and restored tuner/camera lifecycle checks. The ordinary test task has
+no sources; it is not evidence that those regressions ran. See the dated results
+and exact external-suite command in [branch integration](docs/branch-integration.md#build-and-validation).
 No robot code was deployed or run; battery runtime and field behavior remain unmeasured.
 
 See [autonomous reliability](docs/ftc-autonomous-guidelines.md),

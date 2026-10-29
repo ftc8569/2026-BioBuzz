@@ -6,6 +6,49 @@ The velocity shooter uses a one-state discrete LQR instead of FTCLib PIDF. Flywh
 and live tuning, along with the motors, blocker and
 sampled feedback. Both auto and TeleOp call the same subsystem API.
 
+## Driver controls and manual tuning
+
+The current `yatishgrandhe/manual-shooter` branch (`adb12be`) already supplies the
+hold-Y manual behavior, 0.005 preset increments and reverse priority used here.
+Those are preserved. The older `ri5w-autos`/`shreyas-josyula` PID implementation,
+Y-toggle behavior, larger preset increments and old blocker positions are not
+substituted for the current LQR settings.
+
+| Control | Result |
+| --- | --- |
+| Hold G1 right bumper | Automatic LQR; target = preset × 4500 RPM |
+| Hold G1 Y | Manual voltage-normalized power; overrides right bumper |
+| Hold G1 left bumper | Reverse at −0.8 normalized power; overrides shooting |
+| Either D-pad up/down | Change shared preset by 0.005 per press; holding does not repeat |
+| Either B, while in manual mode | Open blocker manually; cannot bypass LQR readiness |
+| Release shooting buttons | Stop flywheels and clear shot readiness |
+
+The default preset is **0.72**: **3240 RPM** in LQR, or a requested **8.64 V** in
+manual mode. For example, manual mode commands 0.72 power at 12 V and 0.864 at
+10 V, capped at 1.0. Manual operation does not regulate measured RPM. Automatic
+manual-mode feed readiness waits three seconds; a preset or mode change restarts
+that wait. Match intake still applies the 100 ms blocker-opening delay and
+0.6 feed power. G1 A retains its intake-stop priority.
+
+`Shooter Tuning` is a new diagnostic in `teleop/Telemetry.kt` that reuses the
+**same** `ShooterSubsystem`, `ShooterControls`, LQR implementation and telemetry.
+It only requires `shooter1`, `shooter2` and `blocker`. INIT keeps outputs stopped
+while allowing D-pad preset adjustment; START enables the held-button controls
+above. It does not run an intake or position hold. Driver Station and Panels show
+both RPMs, commanded power, mode, readiness, blocker state and LQR parameters.
+Changes to `ShooterLqrTuning` in Panels apply on the next LQR update, as in match
+TeleOp. Preset adjustments are local to this OpMode run; autos remain at 0.72.
+
+Every active loop refreshes each hub's MANUAL cache once. STOP, partial INIT and
+loop failures independently stop both motors, close the blocker and restore cache
+modes. Failure telemetry includes the phase and exception; RobotLog retains the
+stack. This entry was tested only with fake hardware, not run on the robot.
+
+The older `Blocker Diagnostic` and `Shooter Motor Diagnostic` now use the same
+current blocker endpoints as match shooting: **closed 0.78, open 0.65**. The raw
+motor diagnostic retains its X/Y/B individual/both-motor controls and trigger
+power adjustment; it is separate from the shared-controller `Shooter Tuning`.
+
 ## Model and controller
 
 In RPM and volts:

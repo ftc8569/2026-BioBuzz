@@ -115,7 +115,9 @@ class ShooterSubsystem(hardwareMap: HardwareMap, nanoTime: () -> Long = System::
 
 }
 
-/** Hold Y for manual shooting; preset adjustments happen once per D-pad press. */
+/** Shared match/tuner controls from manual-shooter: hold Y, release to return to LQR.
+ * One D-pad press changes 0.005 (22.5 RPM in LQR); reverse always wins.
+ */
 internal class ShooterControls {
     private var presetSteps = (ShooterController.DEFAULT_SHOOTER_PRESET / 0.005).roundToInt()
     val preset: Double get() = presetSteps * 0.005
@@ -174,7 +176,7 @@ class ShooterController(private val nanoTime: () -> Long = System::nanoTime) {
     private val manualOpenAllowed: Boolean
         get() = manualBlockerOpen && controlMode == ControlMode.MANUAL_POWER
     val blockerOpen: Boolean get() = manualOpenAllowed || feedReady
-    val blockerPosition: Double get() = if (blockerOpen) 0.65 else BLOCKER_CLOSED
+    val blockerPosition: Double get() = if (blockerOpen) BLOCKER_OPEN else BLOCKER_CLOSED
     val blockerStatus: String get() = when {
         manualOpenAllowed -> "Manual open"
         requestedPower > 0.0 -> feedReadiness
@@ -275,6 +277,7 @@ class ShooterController(private val nanoTime: () -> Long = System::nanoTime) {
     companion object {
         const val MAX_MOTOR_RPM = 4500.0
         const val DEFAULT_SHOOTER_PRESET = 0.72
+        const val BLOCKER_OPEN = 0.65
         const val BLOCKER_CLOSED = 0.78
     }
 }

@@ -36,7 +36,33 @@ import java.util.function.Function;
 import java.util.function.Supplier;
 import org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit;
 
+/** Pedro 3 tuner registry. Factories create procedures without opening hardware. */
 public class Tuning {
+  @Tuner
+  public static Procedure otosTuner() {
+    return new org.firstinspires.ftc.teamcode.pedro.procedures.OTOSTuner();
+  }
+
+  @Tuner
+  public static Procedure octoQuadTuner() {
+    return new org.firstinspires.ftc.teamcode.pedro.procedures.OctoQuadTuner();
+  }
+
+  @Tuner
+  public static Procedure twoWheelTuner() {
+    return new org.firstinspires.ftc.teamcode.pedro.procedures.TwoWheelTuner();
+  }
+
+  @Tuner
+  public static Procedure threeWheelTuner() {
+    return new org.firstinspires.ftc.teamcode.pedro.procedures.ThreeWheelTuner();
+  }
+
+  @Tuner
+  public static Procedure threeWheelIMUTuner() {
+    return new org.firstinspires.ftc.teamcode.pedro.procedures.ThreeWheelIMUTuner();
+  }
+
   @Tuner
   public static Procedure mecanumTuner() {
     return new MecanumTuner();
@@ -148,9 +174,9 @@ class MecanumTuner extends Procedure {
 
           Inputs inputs =
               inputs(
-                  displayName, "Determine the " + displayName.toLowerCase() + " motor direction.");
+                  displayName, "Determine the " + displayName.toLowerCase(Locale.ROOT) + " motor direction.");
           Inputs.Field<Boolean> correctMotorField =
-              inputs.b("Did the " + displayName.toLowerCase() + " motor spin?").withDefault(true);
+              inputs.b("Did the " + displayName.toLowerCase(Locale.ROOT) + " motor spin?").withDefault(true);
           Inputs.Field<Direction> directionField =
               inputs.e("Which way did the motor spin?", Direction.class);
           awaitInputs(inputs);
@@ -175,7 +201,7 @@ class SpinMotor extends TuningOpMode<Void> {
     super(
         displayName,
         "The "
-            + displayName.toLowerCase()
+            + displayName.toLowerCase(Locale.ROOT)
             + " motor will spin. The interactive diagram shows which way is forward. Click stop"
             + " when you know if it is spinning forward or reversed.",
         true);

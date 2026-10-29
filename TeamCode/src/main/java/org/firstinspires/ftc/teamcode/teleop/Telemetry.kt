@@ -1,6 +1,8 @@
 package org.firstinspires.ftc.teamcode.teleop
 
 import com.bylazar.telemetry.JoinedTelemetry
+import com.bylazar.configurables.annotations.Configurable
+import org.firstinspires.ftc.teamcode.vision.VisionSubsystem
 import com.qualcomm.hardware.lynx.LynxModule
 import com.qualcomm.robotcore.eventloop.opmode.OpMode
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp
@@ -287,8 +289,8 @@ class BlockerDiagnosticTeleOp : OpMode() {
     }
 
     companion object {
-        private const val CLOSED = 0.24
-        private const val OPEN = 0.45
+        private const val CLOSED = ShooterController.BLOCKER_CLOSED
+        private const val OPEN = ShooterController.BLOCKER_OPEN
     }
 }
 
@@ -306,7 +308,7 @@ class ShooterMotorDiagnosticTeleOp : OpMode() {
         val hubs = hardwareMap.getAll(LynxModule::class.java)
         safety.setCaching(hubs, LynxModule.BulkCachingMode.OFF)
         hubs.forEach { it.clearBulkCache() }
-        blocker = safety.closeBlocker(hardwareMap, 0.24)
+        blocker = safety.closeBlocker(hardwareMap, ShooterController.BLOCKER_CLOSED)
         shooter1 = safety.motor(hardwareMap, "shooter1")
         shooter2 = safety.motor(hardwareMap, "shooter2")
         // Reverse both motor polarities while preserving logical forward/reverse controls.
@@ -320,7 +322,7 @@ class ShooterMotorDiagnosticTeleOp : OpMode() {
         shooter2.power = 0.0
         initialPosition1 = shooter1.currentPosition
         initialPosition2 = shooter2.currentPosition
-        blocker.position = 0.24
+        blocker.position = ShooterController.BLOCKER_CLOSED
     }
 
     override fun loop() = guarded {
@@ -328,7 +330,7 @@ class ShooterMotorDiagnosticTeleOp : OpMode() {
         val power = 0.25 + 0.55 * gamepad1.right_trigger.toDouble().coerceIn(0.0, 1.0)
         shooter1.power = if (gamepad1.x || gamepad1.b) power else 0.0
         shooter2.power = if (gamepad1.y || gamepad1.b) power else 0.0
-        blocker.position = 0.24
+        blocker.position = ShooterController.BLOCKER_CLOSED
 
         telemetry.addLine("Hold X: motor 1 | Y: motor 2 | B: both | RT: raise power")
         telemetry.addData("Power 1 / 2", "%.2f / %.2f", shooter1.power, shooter2.power)
@@ -360,4 +362,155 @@ class ShooterMotorDiagnosticTeleOp : OpMode() {
     }
 
     override fun stop() { safety.stop(null)?.let { throw it } }
+}
+
+/** Optional camera check. It starts only when this diagnostic is explicitly selected and started. */
+@Configurable
+@TeleOp(name = "Vision Diagnostic", group = "Test")
+class VisionDiagnosticTeleOp : OpMode() {
+    private var vision: VisionSubsystem? = null
+    private val refresh = TelemetryRefresh()
+    private var failure: String? = null
+
+    override fun init() = guarded("INIT camera") {
+        vision = VisionSubsystem.optional(hardwareMap)
+        telemetry.msTransmissionInterval = 50
+        telemetry.addData("Vision status", if (vision == null) "No configured limelight" else "Ready; START begins camera")
+        telemetry.update()
+    }
+    override fun start() = guarded("START camera") { vision?.start(pipelineIndex) }
+    override fun loop() = guarded("LOOP camera") {
+        val camera = vision
+        val frame = camera?.update()
+        if (refresh.isDue()) {
+            telemetry.addData("Vision status", (frame?.status ?: "No configured limelight") as Any)
+            telemetry.addData("Visible tags", camera?.getVisibleTagIds() ?: emptyList<Int>())
+            telemetry.addData("Frame age (ms)", frame?.ageMillis ?: 0)
+            frame?.estimate?.let {
+                telemetry.addData("Hive robot pose (m / rad)", it.robot)
+                telemetry.addData("Hive fit residual (m)", it.residualMeters)
+            }
+            telemetry.update()
+        }
+    }
+    override fun stop() {
+        val camera = vision
+        vision = null
+        camera?.stop()
+    }
+    private inline fun guarded(phase: String, action: () -> Unit) {
+        failure?.let {
+            if (refresh.isDue()) { telemetry.addData("Vision error", it as Any); telemetry.update() }
+            return
+        }
+        try { action() } catch (error: RuntimeException) {
+            try { stop() } catch (cleanup: RuntimeException) { if (error !== cleanup) error.addSuppressed(cleanup) }
+            failure = "$phase: ${error.message}"
+            RobotLog.ee("BioBuzzVision", error, failure)
+            telemetry.addData("Vision error", failure as Any?)
+            telemetry.update()
+        }
+    }
+    companion object { @JvmField var pipelineIndex = 0 }
+}
+
+/** Uses the match shooter and controls for tuning; only flywheels and blocker are required.
+ * INIT stays stopped. No intake, drive, odometry or camera is created by this OpMode.
+ */
+@TeleOp(name = "Shooter Tuning", group = "Test")
+class ShooterTuningTeleOp internal constructor(
+    private val nanoTime: () -> Long,
+    private val panels: () -> Telemetry
+) : OpMode() {
+    constructor() : this(System::nanoTime, { com.bylazar.telemetry.PanelsTelemetry.ftcTelemetry })
+    private val safety = SafeHardware()
+    private val controls = ShooterControls()
+    private val profiler = LoopProfiler(nanoTime)
+    private val errorRefresh = TelemetryRefresh(nanoTime)
+    private var hubs = emptyList<LynxModule>()
+    private var shooter: ShooterSubsystem? = null
+    private var display: RobotTelemetry? = null
+    private var ready = false
+    private var started = false
+    private var failure: String? = null
+    private var requestedPower = 0.0
+    private val up: Boolean get() = gamepad1.dpad_up || gamepad2.dpad_up
+    private val down: Boolean get() = gamepad1.dpad_down || gamepad2.dpad_down
+    private val manualBlocker: Boolean get() = gamepad1.b || gamepad2.b
+
+    override fun init() = guarded("INIT") {
+        hubs = hardwareMap.getAll(LynxModule::class.java)
+        safety.setCaching(hubs, LynxModule.BulkCachingMode.MANUAL)
+        hubs.forEach { it.clearBulkCache() }
+        // Acquire independent stop handles before the subsystem can partially initialize.
+        var error = SafeHardware.attempt(null) {
+            safety.closeBlocker(hardwareMap, ShooterController.BLOCKER_CLOSED)
+        }
+        for (name in listOf("shooter1", "shooter2")) error = SafeHardware.attempt(error) {
+            safety.motor(hardwareMap, name).power = 0.0
+        }
+        SafeHardware.rethrow(error)
+        shooter = ShooterSubsystem(hardwareMap, nanoTime).also {
+            safety.onStop { it.forceStop() }
+            safety.onStop { it.stopVoltagePolling() }
+            it.loopProfiler = profiler
+            it.enablePhasedIo()
+        }
+        display = RobotTelemetry(telemetry, panels(), profiler, nanoTime)
+        ready = true
+        report()
+    }
+
+    override fun init_loop() = guarded("INIT") {
+        controls.update(false, up, down) // Preset can be adjusted while outputs remain zero.
+        report()
+    }
+    override fun start() = guarded("START") {
+        if (!ready) return@guarded
+        checkNotNull(shooter).startVoltagePolling()
+        started = true
+    }
+    override fun loop() = guarded("LOOP") {
+        if (!ready || !started) return@guarded
+        val device = checkNotNull(shooter)
+        hubs.forEach { it.clearBulkCache() } // One owner and one invalidation per active loop.
+        device.beginFrame()
+        controls.update(gamepad1.y, up, down)
+        requestedPower = controls.requestedPower(gamepad1.left_bumper, gamepad1.right_bumper)
+        device.setControlMode(controls.mode)
+        if (requestedPower > 0.0) device.updateShot(requestedPower, controls.mode)
+        else device.setFlywheelPower(requestedPower)
+        device.setManualBlockerOpen(manualBlocker)
+        device.commitOutputs()
+        report()
+    }
+    private fun report() {
+        val device = shooter ?: return
+        display?.publish {
+            addData("Shooter tuning", if (started) "ACTIVE" else "READY: outputs stopped")
+            addData("Controls", "Hold RB: LQR | Y: manual | LB: reverse | D-pad: preset | B: manual blocker")
+            addData("Live LQR settings", "Panels > ShooterLqrTuning")
+            reportShooter(device, controls, requestedPower, manualBlocker, up, down)
+        }
+    }
+    override fun stop() {
+        ready = false
+        started = false
+        SafeHardware.rethrow(safety.stop(null))
+    }
+    private inline fun guarded(phase: String, action: () -> Unit) {
+        if (failure == null) {
+            try { action() } catch (error: Throwable) {
+                ready = false
+                started = false
+                safety.stop(error)
+                failure = "$phase: ${error.javaClass.simpleName}: ${error.message}"
+                RobotLog.ee("BioBuzzShooterTuning", error, failure)
+                errorRefresh.reset()
+            }
+        }
+        failure?.let {
+            if (errorRefresh.isDue()) { telemetry.addData("Shooter tuning error", it as Any); telemetry.update() }
+        }
+    }
 }

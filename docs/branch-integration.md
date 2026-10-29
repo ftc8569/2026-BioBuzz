@@ -1,4 +1,4 @@
-# Branch integration — 2026-10-25
+# Branch integration — updated 2026-10-28
 
 Integrated into the existing `2026-BioBuzz` checkout on `ai-slop-review`.
 TeleOp remains exactly five source files; autonomous code uses three files.
@@ -22,8 +22,36 @@ source branch's generated coordinates directly beside their runner.
 
 This is a feature integration into the current architecture, rather than copying
 obsolete subsystem implementations alongside their replacements. The current
-Drive, Intake, Shooter, location snapshot and optional HiveVision cover those
-subsystems. No second Pinpoint owner or competing hardware-control loop was added.
+Drive, Intake, Shooter, RobotLocationSubsystem and optional VisionSubsystem cover
+those responsibilities. No second Pinpoint owner or competing hardware-control loop was added.
+
+## Additional subsystem and tuner integration — 2026-10-28
+
+Fetched all origin branches again on October 28; their source heads remain the
+revisions above. Restored OTOS, OctoQuad, Two Wheel, Three Wheel and Three Wheel +
+IMU procedures from `main` (`7d2c210`), also present in the other working branches.
+All nine Pedro procedure factories are now registered and checked with the
+installed scanner. Current Pinpoint calibration remains unchanged. See the
+[Pedro tuner and subsystem map](pedro-tuning.md) for source locations and lifecycle
+changes.
+
+The branch location and vision responsibilities now have explicit subsystem APIs.
+Location shares the existing one-read snapshot and per-alliance hives; vision has
+an explicit start/stop lifecycle with cached getters and remains optional.
+`Vision Diagnostic` provides a camera-only check. Invalid TeleOp pose samples stop
+before output commit. Fixed hive geometry is cached and output-write lambdas are
+inlined; these changes do not establish measured battery savings.
+
+Reviewed the current manual-shooter branch (`adb12be`): hold-Y, per-press preset
+adjustment, reverse priority and manual blocker control are already integrated.
+The user selected retaining LQR. `Shooter Tuning` now exposes the same controller
+and manual controls in a dedicated diagnostic. The older blocker/motor diagnostics
+now use current 0.78/0.65 blocker endpoints instead of their obsolete 0.24/0.45
+values. No PID controller or old Y-toggle mapping was reintroduced. See
+[shooter tuning](control/shooter-lqr.md#driver-controls-and-manual-tuning).
+
+TeleOp still contains five files; TeamCode has sixteen production source files.
+No drive routes, match settings or existing button mappings were changed.
 
 ## Controls
 
@@ -79,27 +107,43 @@ NextFTC 0.3.0 and Load/Sloth 0.3.2 remain unchanged. Legacy Android DSL and exte
 Kotlin support remain enabled for the installed Load/Sloth integration; Gradle
 reports deprecation warnings for those compatibility flags.
 
-Two focused regression files live under `TeamCode/src/test/.../regression/`;
-they are outside the five-file TeleOp package. Earlier staged test deletions
-remain in place. For integration comparison, the previous 118 tests were adapted
-to the consolidated package names in a temporary folder and run alongside these
-new tests. They exercise actual installed Pedro/LQR with hardware doubles, not a
-physical robot. Test/build results and limitations are summarized in the project
-README. No robot installation, deployment, app launch or OpMode execution was performed.
+The two remaining regression files were removed during this work; their deletions
+are preserved. Tests now run from `/private/tmp/biobuzz-validation` through an
+external Gradle source-set init script. A normal checkout test invocation has no
+sources and must not be reported as a passed regression suite. The external suite
+includes the prior 133 checks, restored tuner and camera tests, geometry comparison,
+non-finite pose shutdown, and the shared-controller shooter tuning lifecycle.
+All hardware is doubled; installed Pedro/NextFTC/LQR implementations execute locally.
 
-Local results on 2026-10-25:
+Local results on 2026-10-28:
 
-- Combined temporary comparison suite: 133 tests, zero failures/errors.
-- Normal checkout: 15 retained tests, zero failures/errors; debug APK and lint pass.
-- Lint: zero errors, 17 warnings; no detector was disabled to obtain this result.
-- Source comparison: all 92 MAIN steps match their branch data, including via points.
-- APK inspection: all 21 annotated match auto classes plus TeleOp are defined in DEX.
-- TeleOp directory: exactly five files, including all shared subsystem code.
+- **154 external-suite tests passed**, zero failures, errors or skips.
+- Debug APK assembly and Android lint passed offline.
+- Lint: **zero errors, 14 warnings** (12 inherited native-library alignment notices,
+  one dependency-version notice, one unused resource). No detector was disabled.
+- Installed Pedro scanner discovers all nine procedures. Real installed
+  ThreeWheelLocalizer tests exercise encoder reset freshness and cache restoration.
+- Installed NextFTC/follower/LQR tests cover driver controls, non-finite odometry,
+  partial initialization and independent shutdown. Shooter tuning uses the actual
+  shared controller with fake motors, including manual/LQR handoff and readiness.
+- APK DEX contains all 21 match auto classes, Robot, both new diagnostics,
+  location/vision subsystems and all five restored tuner classes.
+- TeleOp contains exactly five files. Source comparison confirms the five imported
+  tuner files share the same original revision across main, ri5w and shreyas.
+- No robot validation or battery-runtime measurement was performed.
 
-Reproduce the retained checks without accessing a robot:
+Build/lint without accessing a robot:
 
 ```sh
-./gradlew :TeamCode:testDebugUnitTest :TeamCode:assembleDebug :TeamCode:lintDebug --offline --console=plain
+./gradlew :TeamCode:assembleDebug :TeamCode:lintDebug --offline --console=plain
 ```
 
-Omit `--offline` on a new machine that still needs to download the dependencies.
+External regression command on this machine while the temporary sources exist:
+
+```sh
+./gradlew :TeamCode:testDebugUnitTest :TeamCode:assembleDebug :TeamCode:lintDebug \
+  --init-script /private/tmp/biobuzz-validation.init.gradle --offline --console=plain
+```
+
+Omit `--offline` on a new machine that still needs to download dependencies.
+No installation, deployment, app launch or OpMode execution occurred on a robot.

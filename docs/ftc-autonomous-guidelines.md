@@ -65,18 +65,15 @@ Local checks:
 ./gradlew :TeamCode:testDebugUnitTest :TeamCode:assembleDebug --console=plain
 ```
 
-The focused tests in `teamcode.regression` cover all new entry points, real
-Pedro/LQR lifecycle failures, independent shutdown, 30-second MAIN termination,
-forced parking, blue/red transforms, speed-gated feed timing, and timed-drive
-partial initialization. Driver regressions cover saved hives, macro cancellation,
-shooting handoff, one physical pose read per loop, and reduced idle voltage reads.
-
-The previous staged test deletions are preserved. The earlier 118 tests were
-adapted to the consolidated packages in a temporary validation folder for this
-integration comparison. Those include existing drive/control mappings, original
-auto lifecycle faults, controller math, telemetry, and NextFTC lifecycle checks.
-All evidence is local with fake hardware; no code was installed, launched or run
-on a robot. Sensor-read counts do not establish measured battery runtime.
+The removed test files remain deleted. Local validation uses an external copy of
+the historical tests adapted to the consolidated packages, plus new subsystem and
+tuner regressions. It exercises installed Pedro/LQR and NextFTC with hardware
+doubles: route timing, READY guards, partial initialization, failed odometry,
+independent cleanup, driver controls and cache ownership. See
+[branch integration](branch-integration.md#build-and-validation) for the dated
+results and external source-set command. A normal test task with no sources does
+not run this suite. All evidence is local; no robot was installed, launched or run.
+Sensor-read counts do not establish measured battery runtime.
 
 ## Primary references reviewed
 

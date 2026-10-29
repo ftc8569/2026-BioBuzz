@@ -2,6 +2,10 @@ package org.firstinspires.ftc.teamcode.vision
 
 import com.bylazar.configurables.annotations.Configurable
 import com.qualcomm.hardware.limelightvision.Limelight3A
+import com.qualcomm.hardware.limelightvision.LLResult
+import com.qualcomm.hardware.limelightvision.LLResultTypes
+import com.qualcomm.robotcore.hardware.HardwareMap
+import org.firstinspires.ftc.robotcore.external.navigation.Pose3D
 import kotlin.math.*
 import org.firstinspires.ftc.robotcore.external.navigation.AngleUnit
 import org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit
@@ -113,16 +117,20 @@ object HiveFieldModel {
     )
     private val localXInches = doubleArrayOf(6.5, 2.0, -2.5, -7.0)
 
+    private val pivot = Vec3(0.0, 0.0, PIVOT_HEIGHT)
+    // These 16 transforms never change. Reuse them across the solver's finite-difference trials.
+    private val nominalTags = Array(16) { i ->
+        val cluster = clusters[i / 4]
+        val offset = Vec3(localXInches[i % 4] * INCH, 0.0, 0.0)
+        Transform3(cadToField * (cluster.cadOrigin + cluster.cadRotation * offset),
+            cadToField * cluster.cadRotation * stickerToTagAxes)
+    }
+
     fun isRed(id: Int) = id in 30..37
     fun isBlue(id: Int) = id in 38..45
 
     fun tagPose(id: Int, hiveAngleRadians: Double): Transform3? {
-        val cluster = clusters.firstOrNull { id in it.startId..it.startId + 3 } ?: return null
-        val offset = Vec3(localXInches[id - cluster.startId] * INCH, 0.0, 0.0)
-        val cadCenter = cluster.cadOrigin + cluster.cadRotation * offset
-        val nominal = Transform3(
-            cadToField * cadCenter, cadToField * cluster.cadRotation * stickerToTagAxes)
-        val pivot = Vec3(0.0, 0.0, PIVOT_HEIGHT)
+        val nominal = nominalTags.getOrNull(id - 30) ?: return null
         val rotation = Mat3.rotX(hiveAngleRadians)
         return Transform3(pivot + rotation * (nominal.p - pivot), rotation * nominal.r)
     }
@@ -295,19 +303,22 @@ class LimelightHiveLocalizer(private val camera: Limelight3A) {
     private var previousFrame = VisionFrame(null, emptyList(), 0, "Waiting for camera")
 
     fun start(pipeline: Int = 0) {
-        camera.pipelineSwitch(pipeline)
+        previousCaptureNanos = Long.MIN_VALUE
+        previousFrame = VisionFrame(null, emptyList(), 0, "Waiting for camera")
+        check(camera.pipelineSwitch(pipeline)) { "Limelight rejected pipeline $pipeline" }
         camera.setPollRateHz(50)
         camera.start()
     }
 
     fun stop() = camera.stop()
 
-    fun read(): VisionFrame {
+    fun read(): VisionFrame = read(if (HiveCameraMount.configured) camera.latestResult else null)
+
+    internal fun read(result: LLResult?): VisionFrame {
         if (!HiveCameraMount.configured) {
             return VisionFrame(null, emptyList(), 0, "Set HIVE camera mount in Panels")
         }
-        val result = camera.latestResult
-            ?: return VisionFrame(null, emptyList(), 0, "No camera result")
+        if (result == null) return VisionFrame(null, emptyList(), 0, "No camera result")
         val age = result.staleness
         if (age > 250) return VisionFrame(null, emptyList(), age, "Stale camera frame")
         if (!result.isValid) return VisionFrame(null, emptyList(), age, "No valid targets")
@@ -338,5 +349,67 @@ class LimelightHiveLocalizer(private val camera: Limelight3A) {
             if (estimate != null) "OK"
             else if (observations.isEmpty()) "No usable HIVE tags" else "Geometry did not fit")
         return previousFrame
+    }
+}
+
+/** Optional branch vision subsystem. Construct at INIT, start explicitly, update once per loop.
+ * Raw botpose uses the camera's configured field map; hive estimates use our dynamic model.
+ * No match OpMode enables a camera automatically.
+ */
+class VisionSubsystem(private val camera: Limelight3A) : AutoCloseable {
+    constructor(map: HardwareMap, name: String = "limelight") :
+        this(map.get(Limelight3A::class.java, name))
+
+    private val localizer = LimelightHiveLocalizer(camera)
+    private var running = false
+    private var result: LLResult? = null
+    private var ids = emptyList<Int>()
+    var frame = VisionFrame(null, emptyList(), 0, "Camera stopped")
+        private set
+
+    fun start(pipeline: Int = 0) {
+        require(pipeline in 0..9) { "Limelight pipeline must be 0–9" }
+        if (running) return
+        try {
+            localizer.start(pipeline)
+            running = true
+            result = null
+            ids = emptyList()
+            frame = VisionFrame(null, emptyList(), 0, "Waiting for camera")
+        } catch (failure: RuntimeException) {
+            try { stop() } catch (cleanup: RuntimeException) { if (failure !== cleanup) failure.addSuppressed(cleanup) }
+            throw failure
+        }
+    }
+
+    fun update(): VisionFrame {
+        if (!running) return frame
+        result = camera.latestResult
+        val valid = getLatestResult()
+        ids = valid?.fiducialResults?.map { it.fiducialId } ?: emptyList()
+        frame = localizer.read(result)
+        return frame
+    }
+
+    fun getLatestResult(): LLResult? = result?.takeIf { it.isValid && it.staleness <= 250 }
+    fun getRobotPose(): Pose3D? = getLatestResult()?.botpose
+    fun getFiducialResults(): List<LLResultTypes.FiducialResult> =
+        getLatestResult()?.fiducialResults ?: emptyList()
+    fun getVisibleTagIds(): List<Int> = if (getLatestResult() == null) emptyList() else ids
+
+    fun stop() {
+        try { localizer.stop() }
+        finally {
+            running = false
+            result = null
+            ids = emptyList()
+            frame = VisionFrame(null, emptyList(), 0, "Camera stopped")
+        }
+    }
+    override fun close() = stop()
+
+    companion object {
+        fun optional(map: HardwareMap, name: String = "limelight"): VisionSubsystem? =
+            map.tryGet(Limelight3A::class.java, name)?.let(::VisionSubsystem)
     }
 }
