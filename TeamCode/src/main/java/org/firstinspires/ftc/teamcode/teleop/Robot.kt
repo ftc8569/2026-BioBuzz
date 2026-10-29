@@ -9,6 +9,7 @@ import com.bylazar.telemetry.PanelsTelemetry
 import com.pedropathing.math.Pose
 import com.pedropathing.revhub.localizers.PinpointLocalizer
 import com.qualcomm.hardware.lynx.LynxModule
+import com.qualcomm.robotcore.eventloop.opmode.OpMode
 import com.qualcomm.robotcore.hardware.*
 import dev.nextftc.robot.Mechanism
 import dev.nextftc.robot.NextRobot
@@ -30,7 +31,7 @@ import org.firstinspires.ftc.teamcode.pedro.Constants
  * G1: left stick drives; right stick turns; RB shoots with LQR; Y shoots manually;
  * LB reverses the flywheels; triggers run/reverse intake; A stops intake;
  * X saves the hive location; left-stick click toggles collection assist;
- * right-stick click toggles detailed telemetry.
+ * right-stick click toggles three extra status rows.
  * Either gamepad: D-pad up/down adjusts shooter preset; B opens the blocker in manual mode.
  * G2 Y aims at the saved hive. Turning the right stick cancels aiming.
  * G2 D-pad left/right selects blue/red hive; G2 X approaches its saved location;
@@ -111,10 +112,7 @@ internal class DriverRobot(
     private val intakeFeed = IntakeFeed(nanoTime)
     private val driveIntakeControls = DriveIntakeControls()
     private val shooterControls = ShooterControls()
-    private var detailedLogging = true
-    private val previousEncoders = IntArray(4)
-    private var hasEncoderBaseline = false
-    private val encoderDeltas = IntArray(4)
+    private var detailedLogging = false
     private val savedHive: Pose? get() = navigation.savedHive(hiveAlliance)
     private var targetHeading: Double? = null
     private var aiming = false
@@ -136,7 +134,7 @@ internal class DriverRobot(
         profiler.beginLoop()
         try {
             captureControls(gamepad1, gamepad2)
-            hardware.read(detailedLogging)
+            hardware.read(false)
             profiler.measure(LoopStage.COMPUTE) { updateDrive(); updateMechanisms() }
             hardware.write()
             updateTelemetry()
@@ -151,20 +149,11 @@ internal class DriverRobot(
         g2.sample(gamepad2)
         if (loggingButton.pressed(g1.right_stick_button)) {
             detailedLogging = !detailedLogging
-            hasEncoderBaseline = false
             telemetry.clear()
         }
     }
 
     internal fun updateDrive() = profiler.measure(LoopStage.DRIVE_TOTAL) {
-        hardware.encoderPositions?.let { positions ->
-            for (i in encoderDeltas.indices) {
-                encoderDeltas[i] =
-                    if (hasEncoderBaseline) positions[i] - previousEncoders[i] else 0
-                previousEncoders[i] = positions[i]
-            }
-            hasEncoderBaseline = true
-        }
         val selected = if (g2.dpad_left) RobotLocationSubsystem.Alliance.BLUE
             else if (g2.dpad_right) RobotLocationSubsystem.Alliance.RED else hiveAlliance
         if (selected != hiveAlliance) {
@@ -243,37 +232,24 @@ internal class DriverRobot(
     internal fun updateTelemetry() {
         loopTiming.update()
         telemetry.publish {
-            addData("Loop interval (ms)", "%.2f", loopTiming.intervalMs)
+            reportShooter(shooter, shooterControls)
+            addData("Drive", when {
+                hold.active -> "Holding shot position"
+                pollen.collecting -> "Pollen sweep"
+                pollen.active -> "Hive approach"
+                aiming -> "Aiming"
+                else -> "Manual"
+            })
+            addData("Hive", "$hiveName: ${if (savedHive == null) "not saved" else "saved"}")
             if (detailedLogging) {
-                reportDrive()
-                addData("Loop frequency (Hz)", "%.1f", loopTiming.frequencyHz)
-                addData("Detailed logging (G1 right-stick click)", "On")
-                addData("Shooting position hold", hold.active)
-                addData("Intake Power", intakePower)
-                addData("Drive intake assist (G1 left-stick click)",
-                    driveIntakeControls.enabled)
-                reportShooter(shooter, shooterControls, shooterPower, manualBlocker, up, down)
+                addData("Pose (in / deg)", "%.1f, %.1f, %.0f", location.x(), location.y(),
+                    Math.toDegrees(location.heading()))
+                addData("Intake", "%.2f; assist %s", intakePower, if (driveIntakeControls.enabled) "on" else "off")
+                addData("Loop (ms)", "%.1f", loopTiming.intervalMs)
             }
-            reportTimings()
         }
     }
 
-    private fun RobotTelemetry.reportDrive() = profiler.measure(LoopStage.DRIVE_TELEMETRY) {
-        addData("Drive encoder delta (ticks)", "FL %d, FR %d, BL %d, BR %d",
-            encoderDeltas[0], encoderDeltas[1], encoderDeltas[2], encoderDeltas[3])
-        addData("Robot X (in)", location.x())
-        addData("Robot Y (in)", location.y())
-        addData("Robot Heading (rad)", location.heading())
-        addData("$hiveName Hive Heading (rad)",
-            targetHeading ?: "Press G1 X to save hive, then G2 Y to aim")
-        addData("Turning to $hiveName Hive",
-            if (aiming) "Yes (right stick cancels)" else "No")
-        headingError?.let { addData("Heading Error (rad)", it) }
-        addData("Selected hive (G2 D-pad left/right)", hiveName)
-        addData("Selected hive saved", savedHive != null)
-        addData("Drive assist (G2 A sweep / X approach)",
-            if (pollen.collecting) "Pollen sweep" else if (pollen.active) "Hive approach" else "Off")
-    }
 }
 
 /** Preserve the original failure and any cleanup errors before NextFTC tears down its hooks. */
@@ -467,4 +443,57 @@ internal inline fun outputWrites(force: Boolean, count: Int, write: (Int) -> Uni
         }
     }
     failure?.let { throw it }
+}
+
+
+/** Runs an existing guarded routine inside NextFTC's real lifecycle and command scheduler.
+ * Each run has a fresh private frame owner; RobotSession remains the only scanned NextRobot.
+ * Pedro's AutoTune procedures keep the tuning library's required TuningOpMode API.
+ */
+abstract class NextRoutineOpMode private constructor(frame: RoutineFrame) : NextOpMode(frame, frame) {
+    constructor(create: () -> OpMode) : this(RoutineFrame(create))
+}
+
+private class RoutineFrame(private val create: () -> OpMode) : NextRobot, OpModeHook {
+    private var routine: OpMode? = null
+    private var source: NextOpMode? = null
+    private var started = false
+    override var mechanisms: Set<Mechanism> = emptySet()
+        private set
+
+    override fun afterConstruction(opMode: NextOpMode) = guarded(::afterEnd) {
+        source = opMode
+        val controller = create().also { routine = it }
+        controller.hardwareMap = opMode.hardwareMap
+        controller.telemetry = opMode.telemetry
+        controller.gamepad1 = Gamepad()
+        controller.gamepad2 = Gamepad()
+        sampleControls()
+        controller.init()
+        mechanisms = setOf(object : Mechanism {
+            override val defaultCommand = infinite {
+                guarded(::afterEnd) {
+                    sampleControls()
+                    // NextFTC can reach beforeStart after STOP during INIT. Only an active
+                    // scheduler frame may start the routine or request motor output.
+                    if (!started) { started = true; controller.start() }
+                    controller.loop()
+                }
+            }
+        })
+    }
+    private fun sampleControls() {
+        val opMode = source ?: return
+        routine?.gamepad1?.sample(opMode.gamepad1)
+        routine?.gamepad2?.sample(opMode.gamepad2)
+    }
+    override fun beforeDisabled() = guarded(::afterEnd) { sampleControls(); routine?.init_loop() }
+    override fun afterEnd() {
+        val controller = routine
+        started = false
+        routine = null
+        source = null
+        mechanisms = emptySet()
+        controller?.stop()
+    }
 }

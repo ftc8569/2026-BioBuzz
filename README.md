@@ -55,7 +55,7 @@ NextFTC v2 **0.3.0** discovers `RobotSession` without opening hardware. Every IN
 creates fresh hardware and a `DriverRobot` mechanism. NextFTC schedules its default
 command, which owns the drive, shooter and intake and performs one complete
 read → compute → write → report frame. The `afterEnd` hook stops devices and restores
-cache modes even after a loop failure. Gamepad values and encoder history use
+cache modes even after a loop failure. Gamepad values use
 reused buffers; LQR settings are revalidated only when changed.
 
 `pedro/Tuning.java` registers all nine procedures with the installed Pedro 3 scanner.
@@ -70,7 +70,15 @@ lives in `teleop/Telemetry.kt`; match TeleOp does not start the camera.
 TeleOp retains its existing Driver Station name, **BioBuzz NextFTC Kotlin TeleOp**,
 so drivers can select the same entry. It now uses the current
 [NextFTC lifecycle](https://nextftc.dev/robot/nextopmode/) and command scheduler.
-The shared intake and shooter implementations in `subsystems/` are also used by the existing autos.
+All 21 autonomous and four diagnostic entries now use NextFTC too, through a
+small `NextRoutineOpMode` adapter in `Robot.kt`. The guarded routine implementations
+remain independently testable; their existing Driver Station names are retained.
+START is deferred until the first active scheduler frame, so stopping during INIT
+cannot start a routine. The collection command group executes within that frame
+instead of recursively running the global scheduler. All five subsystem classes
+implement NextFTC `Mechanism`; their coordinated frame remains the only loop owner.
+Pedro's nine tuner factories retain its installed `TuningOpMode` API.
+The shared intake and shooter implementations are used by both driver and auto code.
 
 All shooting modes use the same **0.6 intake feed power** and **100 ms blocker
 opening delay**. Basic autos feed for two full seconds after that delay; the longer
@@ -95,12 +103,16 @@ Shooter preset remains **0.72**, with the existing LQR tuning and routes.
 | G2 X | Approach the selected saved hive |
 | G2 A | Toggle pollen sweep and collection; sticks, shooting/reverse or G1 A cancel |
 | G1 left-stick click | Toggle collection assist; initially on |
-| G1 right-stick click | Toggle detailed telemetry; initially on |
+| G1 right-stick click | Toggle three extra status rows; initially off |
 
 Manual power adjustment is present: hold **G1 Y**, then press **either controller's
 D-pad up/down**. Each new press adds/subtracts **0.005**, for example
 **0.720 → 0.725 → 0.720**. Holding a D-pad direction does not repeatedly change it.
 The preset is limited to 0–1 and shared with the LQR RPM target; the default is 0.72.
+In LQR, each press changes the target by **22.5 RPM**. Flywheel 1's measured RPM
+feeds the controller: `volts = kV × targetRPM + K × (targetRPM − measuredRPM)`.
+Both motors receive the same voltage-compensated power. Holding Y uses manual
+power without RPM regulation; it still displays both measured speeds.
 
 ### Battery and hardware traffic
 
@@ -123,7 +135,7 @@ Local build and lint verification (no robot connection required):
 ./gradlew :TeamCode:assembleDebug :TeamCode:lintDebug --console=plain
 ```
 
-The build uses Gradle **9.7.0**, Kotlin **2.4.21**, Android plugin **9.3.3**, and
+The build uses Gradle **9.7.1**, Kotlin **2.4.21**, Android plugin **9.3.3**, and
 JDK **17**. The wrapper checksum is pinned. See [build compatibility and validation](docs/branch-integration.md#build-and-validation).
 The removed tests remain deleted. The external validation suite exercises the
 installed Pedro/NextFTC/LQR code with fake hardware, plus branch route/driver
@@ -174,7 +186,10 @@ Hub, or <http://192.168.49.1:8001> for a phone Robot Controller.
 BioBuzz TeleOp sends its telemetry to both the Driver Station and Panels,
 including shooter target RPM, measured RPM, motor power, and feed readiness.
 One `JoinedTelemetry` instance shares each formatted value between both outputs.
-Display work runs at most every 50 ms; timing strings are rebuilt once per second.
+Display work runs at most every 50 ms. The long timing and motor-specification dumps
+are removed; eight normal rows show mode, preset, target RPM, both measured RPMs,
+motor power, feed readiness, drive status and selected hive. G1 right-stick click
+adds only pose, intake/assist status and loop interval.
 The hardware/control loop continues on every iteration.
 Custom drawings require calls to the Panels field plugin API.
 

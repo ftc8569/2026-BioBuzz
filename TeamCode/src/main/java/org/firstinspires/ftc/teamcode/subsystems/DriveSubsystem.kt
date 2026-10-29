@@ -1,5 +1,6 @@
 package org.firstinspires.ftc.teamcode.subsystems
 
+import dev.nextftc.robot.Mechanism
 import com.qualcomm.robotcore.hardware.DcMotor
 import com.qualcomm.robotcore.hardware.DcMotorSimple
 import com.qualcomm.robotcore.hardware.HardwareMap
@@ -7,7 +8,7 @@ import kotlin.math.abs
 import org.firstinspires.ftc.teamcode.teleop.outputWrites
 
 /** Owns the four drive motors and caches output commands for the shared loop. */
-class DriveSubsystem(hardwareMap: HardwareMap) {
+class DriveSubsystem(hardwareMap: HardwareMap) : Mechanism {
     private val motors = listOf("driveFL", "driveFR", "driveBL", "driveBR")
         .map { hardwareMap.get(DcMotor::class.java, it) }
     private var phasedIo = false

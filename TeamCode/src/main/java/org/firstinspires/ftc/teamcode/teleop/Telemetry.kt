@@ -7,7 +7,7 @@ import com.bylazar.configurables.annotations.Configurable
 import org.firstinspires.ftc.teamcode.subsystems.VisionSubsystem
 import com.qualcomm.hardware.lynx.LynxModule
 import com.qualcomm.robotcore.eventloop.opmode.OpMode
-import com.qualcomm.robotcore.eventloop.opmode.TeleOp
+import dev.nextftc.robot.opmode.NextTeleop
 import com.qualcomm.robotcore.hardware.DcMotor
 import com.qualcomm.robotcore.hardware.DcMotorEx
 import com.qualcomm.robotcore.hardware.DcMotorSimple
@@ -171,7 +171,6 @@ internal class RobotTelemetry(
         timed(driverStation, LoopStage.DS_TELEMETRY_UPDATE),
         timed(panels, LoopStage.PANELS_TELEMETRY_UPDATE)
     ).apply { msTransmissionInterval = 50 }
-    private var timingRows: List<Pair<String, String>> = emptyList()
 
     fun addData(caption: String, value: Any?) { joined.addData(caption, value) }
     fun addData(caption: String, format: String, vararg values: Any?) {
@@ -184,23 +183,8 @@ internal class RobotTelemetry(
         profiler.measure(LoopStage.TELEMETRY_BUILD) { build() }
         profiler.measure(LoopStage.TELEMETRY_UPDATE) { joined.update() }
     }
-    fun reset() { refresh.reset(); timingRows = emptyList() }
+    fun reset() { refresh.reset() }
     fun clear() { refresh.reset(); joined.clearAll() }
-
-    fun reportTimings() = profiler.measure(LoopStage.TIMING_REPORT) {
-        profiler.snapshotIfDue()?.let { samples ->
-            val byStage = samples.associateBy { it.stage }
-            timingRows = LoopStage.entries.map { stage ->
-                val sample = byStage[stage]
-                "Timing: ${stage.label}" to if (sample == null) "not called in this window" else
-                    String.format(Locale.US, "avg=%.3f ms max=%.3f ms n=%d",
-                        sample.averageMs, sample.maxMs, sample.calls)
-            }
-            val report = timingRows.joinToString("; ") { "${it.first}: ${it.second}" }
-            RobotLog.ii("BioBuzzLoop", report)
-        }
-        for ((label, value) in timingRows) joined.addData(label, value as Any)
-    }
 
     private fun timed(delegate: Telemetry, stage: LoopStage): Telemetry =
         object : Telemetry by delegate {
@@ -212,63 +196,19 @@ internal inline fun <T> LoopProfiler?.measureOrRun(stage: LoopStage, block: () -
     if (this == null) block() else measure(stage, block)
 
 /** Display cached shooter state without reading hardware or changing controller state. */
-internal fun RobotTelemetry.reportShooter(
-    shooter: ShooterSubsystem,
-    controls: ShooterControls,
-    requestedPower: Double,
-    manualBlocker: Boolean,
-    up: Boolean,
-    down: Boolean
-) {
+internal fun RobotTelemetry.reportShooter(shooter: ShooterSubsystem, controls: ShooterControls) {
     val shot = shooter.control
-    val (first, second) = shooter.wheels
-    addData("LQR interval (ms)", "%.2f", shot.lqrIntervalMs)
-    addData("LQR frequency (Hz)", "%.1f", shot.lqrFrequencyHz)
-    shooter.wheels.forEachIndexed { i, wheel ->
-        addData("Shooter flywheel ${i + 1} RPM", "%.0f", wheel.rpm)
-    }
-    val selectedVelocityTarget = controls.velocityTargetRpm
-    if (selectedVelocityTarget != null) {
-        addData("LQR target RPM", "%.0f", selectedVelocityTarget)
-    } else {
-        addData("LQR target RPM", "Manual mode: no RPM target")
-    }
-    addData("LQR shooting active", selectedVelocityTarget != null && requestedPower > 0.0)
-    addData("LQR commanded RPM", "%.0f", shot.targetRpm)
-    addData("LQR model and cost tolerances", shot.lqrModelRead)
-    addData("LQR feedback gain (V/RPM)", shot.lqrFeedbackGain)
-    addData("LQR requested voltage (V)", shot.lqrRequestedVolts)
-    addData("LQR feedback", "Flywheel 1 RPM (shared motor power)")
-    addData("Shooter preset (G1/G2 up/down)", "%.3f", controls.preset)
-    addData("Shooter mode (hold G1 Y for manual)", controls.mode)
-    addData("Shooter speed state", shot.speedStatus)
-    addData("D-pad seen (up/down)", "%s / %s", up, down)
-    addData("Shooter requested fraction", "%.2f", requestedPower)
-    addData("Shooter motor power 1 / 2", "%.2f / %.2f",
-        shooter.flywheelPower, shooter.flywheelPower)
-    addData("Manual blocker (G1/G2 B)", manualBlocker)
-    addData("Blocker open", shot.blockerOpen)
-    addData("Flywheel 1 within 1 percent of target", shot.atSpeed)
-    addData("Automatic feed ready", shot.feedReady)
-    addData("Feed readiness", shot.feedReadiness)
-    addData("Blocker status", shot.blockerStatus)
-    addData("Blocker commanded position", "%.2f", shot.blockerPosition)
-    addData("Shooter preset reference RPM", "%.0f", ShooterController.MAX_MOTOR_RPM)
-    addData("RPM configuration valid", first.valid)
-    addData("Raw ticks/s 1 / 2", "%.0f / %.0f",
-        first.ticksPerSecond, second.ticksPerSecond)
-    addData("Encoder position ticks 1 / 2", "%d / %d",
-        first.position, second.position)
-    addData("LQR target ticks/s 1 / 2", "%.0f / %.0f",
-        first.targetTicksPerSecond(shot.targetRpm), second.targetTicksPerSecond(shot.targetRpm))
-    addData("Motor config ticks/rev 1 / 2", "%.0f / %.0f",
-        first.ticksPerRev, second.ticksPerRev)
-    addData("Motor config max ticks/s 1 / 2", "%.0f / %.0f",
-        first.maxTicksPerSecond, second.maxTicksPerSecond)
+    addData("Mode", if (controls.mode == ShooterController.ControlMode.MANUAL_POWER) "Manual" else "LQR")
+    addData("Preset", "%.3f", controls.preset)
+    val target = controls.velocityTargetRpm
+    if (target == null) addData("Target RPM", "Manual power")
+    else addData("Target RPM", "%.0f", target)
+    addData("RPM 1 / 2", "%.0f / %.0f", shooter.wheels[0].rpm, shooter.wheels[1].rpm)
+    addData("Motor power", "%.2f", shooter.flywheelPower)
+    addData("Feed", shot.feedReadiness)
 }
 
 /** Tests the blocker servo without running the shooter or intake. Remove game pieces first. */
-@TeleOp(name = "Blocker Diagnostic", group = "Test")
 class BlockerDiagnosticTeleOp : OpMode() {
     private lateinit var blocker: Servo
 
@@ -297,7 +237,6 @@ class BlockerDiagnosticTeleOp : OpMode() {
 }
 
 /** Direct motor test: no PID, intake, or automatic blocker movement. Clear the wheels first. */
-@TeleOp(name = "Shooter Motor Diagnostic", group = "Test")
 class ShooterMotorDiagnosticTeleOp : OpMode() {
     private lateinit var shooter1: DcMotorEx
     private lateinit var shooter2: DcMotorEx
@@ -343,17 +282,8 @@ class ShooterMotorDiagnosticTeleOp : OpMode() {
         telemetry.addData("Encoder position ticks 1 / 2", "%d / %d", position1, position2)
         telemetry.addData("Ticks moved since init 1 / 2", "%d / %d",
             position1.toLong() - initialPosition1, position2.toLong() - initialPosition2)
-        telemetry.addData("Motor 1 connection", shooter1.connectionInfo)
-        telemetry.addData("Motor 2 connection", shooter2.connectionInfo)
-        telemetry.addData("Motor 1 profile", shooter1.motorType.name)
-        telemetry.addData("Motor 2 profile", shooter2.motorType.name)
-        telemetry.addLine("Bulk cache OFF: fresh reads. " +
-            "Spinning + zero counts: check encoder cables/ports.")
-        telemetry.addData("Configured ticks/rev 1 / 2", "%.0f / %.0f",
+        telemetry.addData("Encoder ticks/rev 1 / 2", "%.0f / %.0f",
             shooter1.motorType.ticksPerRev, shooter2.motorType.ticksPerRev)
-        telemetry.addData("Configured max ticks/s 1 / 2", "%.0f / %.0f",
-            shooter1.motorType.achieveableMaxTicksPerSecond,
-            shooter2.motorType.achieveableMaxTicksPerSecond)
         telemetry.update()
     }
 
@@ -368,7 +298,6 @@ class ShooterMotorDiagnosticTeleOp : OpMode() {
 
 /** Optional camera check. It starts only when this diagnostic is explicitly selected and started. */
 @Configurable
-@TeleOp(name = "Vision Diagnostic", group = "Test")
 class VisionDiagnosticTeleOp : OpMode() {
     private var vision: VisionSubsystem? = null
     private val refresh = TelemetryRefresh()
@@ -419,7 +348,6 @@ class VisionDiagnosticTeleOp : OpMode() {
 /** Uses the match shooter and controls for tuning; only flywheels and blocker are required.
  * INIT stays stopped. No intake, drive, odometry or camera is created by this OpMode.
  */
-@TeleOp(name = "Shooter Tuning", group = "Test")
 class ShooterTuningTeleOp internal constructor(
     private val nanoTime: () -> Long,
     private val panels: () -> Telemetry
@@ -492,7 +420,7 @@ class ShooterTuningTeleOp internal constructor(
             addData("Shooter tuning", if (started) "ACTIVE" else "READY: outputs stopped")
             addData("Controls", "Hold RB: LQR | Y: manual | LB: reverse | D-pad: preset | B: manual blocker")
             addData("Live LQR settings", "Panels > ShooterLqrTuning")
-            reportShooter(device, controls, requestedPower, manualBlocker, up, down)
+            reportShooter(device, controls)
         }
     }
     override fun stop() {
@@ -516,3 +444,17 @@ class ShooterTuningTeleOp internal constructor(
         }
     }
 }
+
+
+// Driver Station entries all run through NextFTC.
+@NextTeleop(name = "Blocker Diagnostic", group = "Test")
+class BlockerDiagnosticTeleOpEntry : NextRoutineOpMode({ BlockerDiagnosticTeleOp() })
+
+@NextTeleop(name = "Shooter Motor Diagnostic", group = "Test")
+class ShooterMotorDiagnosticTeleOpEntry : NextRoutineOpMode({ ShooterMotorDiagnosticTeleOp() })
+
+@NextTeleop(name = "Vision Diagnostic", group = "Test")
+class VisionDiagnosticTeleOpEntry : NextRoutineOpMode({ VisionDiagnosticTeleOp() })
+
+@NextTeleop(name = "Shooter Tuning", group = "Test")
+class ShooterTuningTeleOpEntry : NextRoutineOpMode({ ShooterTuningTeleOp() })

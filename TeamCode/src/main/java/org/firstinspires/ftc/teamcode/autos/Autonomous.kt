@@ -5,13 +5,13 @@ import com.pedropathing.api.PoseFactory
 import com.pedropathing.follower.Follower
 import com.pedropathing.ivy.Command
 import com.pedropathing.ivy.CommandBuilder
-import com.pedropathing.ivy.Scheduler
 import com.pedropathing.ivy.behaviors.EndCondition
 import com.pedropathing.ivy.groups.Groups.sequential
 import com.pedropathing.math.Pose
 import com.pedropathing.paths.Path
 import com.qualcomm.hardware.lynx.LynxModule
-import com.qualcomm.robotcore.eventloop.opmode.Autonomous
+import dev.nextftc.robot.opmode.NextAutonomous
+import org.firstinspires.ftc.teamcode.teleop.NextRoutineOpMode
 import com.qualcomm.robotcore.eventloop.opmode.OpMode
 import com.qualcomm.robotcore.util.RobotLog
 import java.util.function.LongSupplier
@@ -28,7 +28,6 @@ import org.firstinspires.ftc.teamcode.subsystems.ShooterSubsystem
 
 // region Basic autos: shoot for two seconds, then follow the exported parking line
 
-@Autonomous(name = "BasicRed Auto")
 open class BioBuzzAuto @JvmOverloads constructor(
     clock: LongSupplier = LongSupplier(System::nanoTime)
 ) : AutoOpMode(clock) {
@@ -78,18 +77,14 @@ open class BioBuzzAuto @JvmOverloads constructor(
     }
 
     override fun reportTelemetry() {
-        telemetry.addData("LQR interval (ms)", shooter.control.lqrIntervalMs)
-        telemetry.addData("LQR frequency (Hz)", shooter.control.lqrFrequencyHz)
         telemetry.addData("Shooter target RPM", shooter.control.targetRpm)
-        telemetry.addData("Flywheel 1 RPM", shooter.wheels[0].rpm)
-        telemetry.addData("Flywheel 2 RPM", shooter.wheels[1].rpm)
+        telemetry.addData("RPM 1 / 2", "%.0f / %.0f", shooter.wheels[0].rpm, shooter.wheels[1].rpm)
         telemetry.addData("Feed latched", shooter.control.feedReady)
         super.reportTelemetry()
     }
 }
 
 /** Same two-second shot as BasicRed; coordinates come from basicblue.pp. */
-@Autonomous(name = "BasicBlue Auto")
 class BasicBlueAuto @JvmOverloads constructor(
     clock: LongSupplier = LongSupplier(System::nanoTime)
 ) : BioBuzzAuto(clock) {
@@ -104,7 +99,6 @@ class BasicBlueAuto @JvmOverloads constructor(
 
 // region Collection autos: shoot, collect, return, shoot, park
 
-@Autonomous(name = "BioBuzzRed1.5")
 open class BioBuzzRed1_5 @JvmOverloads constructor(private val blue: Boolean = false) : AutoOpMode() {
     private lateinit var path1: Path
     private lateinit var path2: Path
@@ -123,7 +117,6 @@ open class BioBuzzRed1_5 @JvmOverloads constructor(private val blue: Boolean = f
         val path1End = pose(10.7034, 8.5727, -165.0)
         val path2Start = pose(10.7034, 8.5727, -115.0)
         val path2End = pose(58.1696, 132.804, 90.0)
-        Scheduler.reset()
         follower.holdEnd.set(false)
         path1 = Paths.curve(start, pose(34.4053, 12.9376, 0.0), path1End).linear(start, path1End)
         path2 = Paths.curve(path2Start, pose(64.9361, 49.5595, 0.0),
@@ -137,7 +130,9 @@ open class BioBuzzRed1_5 @JvmOverloads constructor(private val blue: Boolean = f
         routine = sequential(
             ShootCommand(follower, shooter, intake), followPath(path1, 1.0),
             followPath(path2, 0.0), ShootCommand(follower, shooter, intake), followPath(path3, 0.0)
-        ).also { Scheduler.schedule(it) }
+        )
+        // The NextFTC frame command owns this group; retain it before starting for failed-START cleanup.
+        checkNotNull(routine).start()
     }
 
     /** Intake collection lasts only as long as its path; cancellation stops it too. */
@@ -152,28 +147,32 @@ open class BioBuzzRed1_5 @JvmOverloads constructor(private val blue: Boolean = f
 
     override fun updateRoutine() {
         operation = "LOOP routine"
-        Scheduler.execute()
+        routine?.execute()
         operation = "LOOP Pedro / Pinpoint"
         follower.update()
         // Once the whole sequence finishes, release outputs and stop background polling.
-        routine?.let { if (!Scheduler.isScheduled(it) && !Scheduler.isRunning(it)) stop() }
+        routine?.let {
+            if (it.done()) {
+                routine = null
+                it.end(EndCondition.NATURALLY)
+                stop()
+            }
+        }
     }
 
     override fun reportTelemetry() {
         val pose = follower.pose()
         telemetry.addData("Path state", follower.mode())
-        telemetry.addData("X (in)", pose.x())
-        telemetry.addData("Y (in)", pose.y())
-        telemetry.addData("Heading (deg)", Math.toDegrees(pose.heading()))
+        telemetry.addData("Pose (in / deg)", "%.1f, %.1f, %.0f", pose.x(), pose.y(), Math.toDegrees(pose.heading()))
     }
 
     override fun stopRoutine() {
-        try { routine?.let { Scheduler.cancel(it) } }
-        finally { Scheduler.reset() }
+        val command = routine
+        routine = null
+        command?.end(EndCondition.INTERRUPTED)
     }
 }
 
-@Autonomous(name = "BioBuzz Auto Blue")
 class BioBuzzAutoBlue : BioBuzzRed1_5(true)
 
 // endregion
@@ -207,16 +206,12 @@ abstract class BioBuzzBackupAuto(
     }
 }
 
-@Autonomous(name = "Backup Blue Left", group = "Backup")
 class BackupAutoBlueLeft : BioBuzzBackupAuto(true, 112.1, 7.8, -90.0, 0.0, 35.5)
 
-@Autonomous(name = "Backup Blue Right", group = "Backup")
 class BackupAutoBlueRight : BioBuzzBackupAuto(true, 133.7, 74.7, 180.0, 360.0, 35.5)
 
-@Autonomous(name = "Backup Red Left", group = "Backup")
 class BackupAutoRedLeft : BioBuzzBackupAuto(false, 29.4, 133.7, 90.0, 180.0, 106.0)
 
-@Autonomous(name = "Backup Red Right", group = "Backup")
 class BackupAutoRedRight : BioBuzzBackupAuto(false, 7.8, 66.8, 0.0, 180.0, 106.0)
 
 // endregion
@@ -371,9 +366,7 @@ abstract class AutoOpMode protected constructor(
     protected open fun reportTelemetry() {
         if (!::follower.isInitialized) return
         val pose = follower.pose()
-        telemetry.addData("x", pose.x())
-        telemetry.addData("y", pose.y())
-        telemetry.addData("heading (deg)", Math.toDegrees(pose.heading()))
+        telemetry.addData("Pose (in / deg)", "%.1f, %.1f, %.0f", pose.x(), pose.y(), Math.toDegrees(pose.heading()))
     }
 
     final override fun stop() {
@@ -425,3 +418,29 @@ abstract class AutoOpMode protected constructor(
 }
 
 // endregion
+
+
+// Keep the existing Driver Station names; NextFTC owns lifecycle and scheduling.
+@NextAutonomous(name = "BasicRed Auto")
+class BioBuzzAutoEntry : NextRoutineOpMode({ BioBuzzAuto() })
+
+@NextAutonomous(name = "BasicBlue Auto")
+class BasicBlueAutoEntry : NextRoutineOpMode({ BasicBlueAuto() })
+
+@NextAutonomous(name = "BioBuzzRed1.5")
+class BioBuzzRed1_5Entry : NextRoutineOpMode({ BioBuzzRed1_5() })
+
+@NextAutonomous(name = "BioBuzz Auto Blue")
+class BioBuzzAutoBlueEntry : NextRoutineOpMode({ BioBuzzAutoBlue() })
+
+@NextAutonomous(name = "Backup Blue Left", group = "Backup")
+class BackupAutoBlueLeftEntry : NextRoutineOpMode({ BackupAutoBlueLeft() })
+
+@NextAutonomous(name = "Backup Blue Right", group = "Backup")
+class BackupAutoBlueRightEntry : NextRoutineOpMode({ BackupAutoBlueRight() })
+
+@NextAutonomous(name = "Backup Red Left", group = "Backup")
+class BackupAutoRedLeftEntry : NextRoutineOpMode({ BackupAutoRedLeft() })
+
+@NextAutonomous(name = "Backup Red Right", group = "Backup")
+class BackupAutoRedRightEntry : NextRoutineOpMode({ BackupAutoRedRight() })

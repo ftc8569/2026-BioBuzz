@@ -20,7 +20,7 @@ substituted for the current LQR settings.
 | Hold G1 right bumper | Automatic LQR; target = preset × 4500 RPM |
 | Hold G1 Y | Manual voltage-normalized power; overrides right bumper |
 | Hold G1 left bumper | Reverse at −0.8 normalized power; overrides shooting |
-| Either D-pad up/down | Change shared preset by 0.005 per press; holding does not repeat |
+| Either D-pad up/down | Up increases / down decreases by 0.005 per press (22.5 RPM in LQR); holding does not repeat |
 | Either B, while in manual mode | Open blocker manually; cannot bypass LQR readiness |
 | Release shooting buttons | Stop flywheels and clear shot readiness |
 
@@ -36,7 +36,9 @@ that wait. Match intake still applies the 100 ms blocker-opening delay and
 It only requires `shooter1`, `shooter2` and `blocker`. INIT keeps outputs stopped
 while allowing D-pad preset adjustment; START enables the held-button controls
 above. It does not run an intake or position hold. Driver Station and Panels show
-both RPMs, commanded power, mode, readiness, blocker state and LQR parameters.
+both RPMs, commanded power, mode, preset, target and feed readiness in six short
+status rows, plus three tuning instructions. Live parameters remain in Panels
+configurables instead of repeating in every telemetry frame.
 Changes to `ShooterLqrTuning` in Panels apply on the next LQR update, as in match
 TeleOp. Preset adjustments are local to this OpMode run; autos remain at 0.72.
 
@@ -81,6 +83,6 @@ An inaccurate kV can leave steady-state RPM error because there is no integrator
 
 ## Local verification
 
-The historical regression suite, run from a temporary folder during branch integration, compares the gain with an independent iterative Riccati solution and simulate spin-up and a shot disturbance with varying loop intervals and 10–14 V saturation. Integration tests cover voltage compensation, live configuration, invalid model/feedback, manual and reverse operation, mode changes, autonomous shooting, and cached hardware boundaries. Simulation verifies the assumed model; no code was deployed or executed on the robot.
+The historical regression suite, run from a temporary folder during branch integration, compares the gain with an independent iterative Riccati solution and simulates spin-up and a shot disturbance with varying loop intervals and 10–14 V saturation. Integration tests cover voltage compensation, live configuration, invalid model/feedback, manual and reverse operation, mode changes, autonomous shooting, and cached hardware boundaries. Simulation verifies the assumed model; no code was deployed or executed on the robot.
 
 References: [WPILib flywheel state-space formulation](https://docs.wpilib.org/en/latest/docs/software/advanced-controls/state-space/state-space-intro.html), [MIT discrete-time LQR derivation](https://underactuated.csail.mit.edu/lqr.html).

@@ -4,7 +4,8 @@ import com.pedropathing.api.Paths
 import com.pedropathing.api.PoseFactory
 import com.pedropathing.math.Pose
 import com.pedropathing.paths.Path
-import com.qualcomm.robotcore.eventloop.opmode.Autonomous
+import dev.nextftc.robot.opmode.NextAutonomous
+import org.firstinspires.ftc.teamcode.teleop.NextRoutineOpMode
 import com.qualcomm.robotcore.hardware.DcMotor
 import com.qualcomm.robotcore.hardware.DcMotorEx
 import com.qualcomm.robotcore.hardware.DcMotorSimple
@@ -26,24 +27,19 @@ abstract class PreloadParkAuto(
     }
 }
 
-@Autonomous(name = "RedPreloadParkClose")
 class RedPreloadParkClose @JvmOverloads constructor(clock: LongSupplier = LongSupplier(System::nanoTime)) :
     PreloadParkAuto(false, true, clock)
 
-@Autonomous(name = "RedPreloadParkFar")
 class RedPreloadParkFar @JvmOverloads constructor(clock: LongSupplier = LongSupplier(System::nanoTime)) :
     PreloadParkAuto(false, false, clock)
 
-@Autonomous(name = "BluePreloadParkClose")
 class BluePreloadParkClose @JvmOverloads constructor(clock: LongSupplier = LongSupplier(System::nanoTime)) :
     PreloadParkAuto(true, true, clock)
 
-@Autonomous(name = "BluePreloadParkFar")
 class BluePreloadParkFar @JvmOverloads constructor(clock: LongSupplier = LongSupplier(System::nanoTime)) :
     PreloadParkAuto(true, false, clock)
 
 /** Quarter-second diagonal move. Needs only four drive motors, with the same guarded cleanup. */
-@Autonomous(name = "MoveForwardLeft")
 class MoveForwardLeft @JvmOverloads constructor(clock: LongSupplier = LongSupplier(System::nanoTime)) :
     AutoOpMode(clock) {
     private var motors = emptyList<DcMotorEx>()
@@ -69,3 +65,20 @@ class MoveForwardLeft @JvmOverloads constructor(clock: LongSupplier = LongSuppli
         if (nanoTime.asLong - started >= 250_000_000L) stop()
     }
 }
+
+
+// Keep the existing Driver Station names; NextFTC owns lifecycle and scheduling.
+@NextAutonomous(name = "RedPreloadParkClose")
+class RedPreloadParkCloseEntry : NextRoutineOpMode({ RedPreloadParkClose() })
+
+@NextAutonomous(name = "RedPreloadParkFar")
+class RedPreloadParkFarEntry : NextRoutineOpMode({ RedPreloadParkFar() })
+
+@NextAutonomous(name = "BluePreloadParkClose")
+class BluePreloadParkCloseEntry : NextRoutineOpMode({ BluePreloadParkClose() })
+
+@NextAutonomous(name = "BluePreloadParkFar")
+class BluePreloadParkFarEntry : NextRoutineOpMode({ BluePreloadParkFar() })
+
+@NextAutonomous(name = "MoveForwardLeft")
+class MoveForwardLeftEntry : NextRoutineOpMode({ MoveForwardLeft() })

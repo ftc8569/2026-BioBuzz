@@ -1,5 +1,6 @@
 package org.firstinspires.ftc.teamcode.subsystems
 
+import dev.nextftc.robot.Mechanism
 import com.bylazar.configurables.annotations.Configurable
 import com.qualcomm.robotcore.hardware.*
 import com.qualcomm.robotcore.hardware.configuration.annotations.DeviceProperties
@@ -23,7 +24,7 @@ import org.firstinspires.ftc.teamcode.teleop.outputWrites
 // Owns the flywheels, blocker, LQR model and battery sampling for TeleOp and autos.
 
 /** Owns two flywheels and their blocker; shot decisions live in the shared controller. */
-class ShooterSubsystem(hardwareMap: HardwareMap, nanoTime: () -> Long = System::nanoTime) {
+class ShooterSubsystem(hardwareMap: HardwareMap, nanoTime: () -> Long = System::nanoTime) : Mechanism {
     val control = ShooterController(nanoTime)
     private val motors = listOf("shooter1", "shooter2")
         .map { hardwareMap.get(DcMotorEx::class.java, it) }

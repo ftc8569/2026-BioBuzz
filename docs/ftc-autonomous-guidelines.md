@@ -6,7 +6,11 @@ translated against the installed library, rather than copied directly.
 
 ## Lifecycle and failure handling
 
-Every match auto uses AutoOpMode to initialize its devices and route before becoming READY.
+Every match auto enters through a `@NextAutonomous` entry and `NextRoutineOpMode`,
+then uses AutoOpMode to initialize its devices and route before becoming READY.
+Only the first active NextFTC scheduler frame invokes START; STOP during INIT
+never starts a routine. The collection auto owns an Ivy sequential group inside
+that frame, without a second call to the global scheduler.
 The original eight autos and the shared lifecycle live in `autos/Autonomous.kt`.
 `MainAutos.kt` adds eight imported sequence autos; `PreloadAutos.kt` adds four
 preload/park autos and a timed move, giving 21 entries. See
@@ -45,7 +49,7 @@ orientation. Confirm the user's physical placement when direction is ambiguous.
 
 Read bulk-cached inputs once per loop, compute from snapshots, then write outputs.
 Clear MANUAL cache every active loop; cached readings otherwise stay stale.
-Keep telemetry content and publish at its configured interval; a mocked 10 ms
+Keep the compact status and failure telemetry, publishing at its configured interval; a mocked 10 ms
 clock test demonstrates timing logic, not an achieved 100 Hz hardware rate.
 Keep existing LQR settings and the shared 0.72 preset when fixing lifecycle code.
 

@@ -1,4 +1,4 @@
-# Branch integration — updated 2026-10-28
+# Branch integration — updated 2026-10-29
 
 Integrated into the existing `2026-BioBuzz` checkout on `ai-slop-review`.
 TeleOp remains exactly five source files; autonomous code uses three files.
@@ -101,14 +101,57 @@ All 21 match autos share READY/START failure guards and independent actuator
 cleanup. MoveForwardLeft uses only the four drive motors and runs its original
 half-power diagonal for 250 ms; it does not require Pinpoint or shooter hardware.
 
+## Feature comparison and NextFTC migration — 2026-10-29
+
+Fetched and inspected all seven origin branches. Source heads are unchanged from
+the revisions listed above; `main` is `7d2c210`, `anirud-ri5w-autos` is `b1f8145`,
+and `yatishgrandhe/manual-shooter` is `adb12be`.
+
+A direct source-data comparison checks all **92 MAIN steps** against
+`ri5w-autos/autos/Routines.java`: types, labels, coordinates, via points, shot counts,
+timeouts and intake flags match. All four route headers match starting poses and
+forced-park windows. Existing Basic, collection, backup and preload routes are
+unchanged by the current migration. The shooter, drive and intake control files
+are byte-for-byte unchanged from the preceding commit.
+
+The maintained feature set includes LQR and manual power adjustment, reverse,
+blocker override, automatic feed delay/readiness, intake assist, shooting position
+hold, separate alliance hives, aiming, approach, pollen sweep, optional vision,
+21 autos and all nine Pedro tuner factories. This is not a claim that every old
+menu entry or controller is identical: older PID/PIDF and Y-toggle controls are
+intentionally superseded, separate alliance TeleOps are combined, and the historical
+standalone `BasicMecanumDrive` menu entry is not copied (manual mecanum drive remains
+in match TeleOp). Unimplemented hopper/camera/tip hooks remain timeout fallbacks.
+
+All **26 selectable team entries** (one match TeleOp, 21 autos and four diagnostics)
+now enter through NextFTC. `NextRoutineOpMode` adapts existing guarded controllers
+without changing routes; these remain plain SDK OpMode classes internally and are
+not independently registered. All five subsystems implement NextFTC `Mechanism`.
+Only the coordinated frame owns execution, avoiding competing default commands.
+Pedro's nine tuning factories keep the tuning library's required API.
+
+The installed NextFTC scanner accepts the public no-argument entry constructors.
+The per-run routine robot is private, leaving `RobotSession` as the sole public
+concrete NextRobot candidate. START is deferred until the first active frame to
+handle STOP during INIT. The collection auto executes its owned Ivy group directly
+inside the frame instead of recursively invoking the global scheduler.
+
+Telemetry is intentionally reduced to **eight normal rows**, with **three optional
+rows** on the existing right-stick toggle. Mode, target/measured speeds, feed status
+and autonomous failures remain visible. Raw motor dumps and large timing reports
+are removed, and display details no longer request optional drive encoder reads.
+
 ## Build and validation
 
-The build uses Gradle 9.7.0, Android Gradle Plugin 9.3.3, Kotlin 2.4.21, and JDK 17.
+The build uses Gradle 9.7.1, Android Gradle Plugin 9.3.3, Kotlin 2.4.21, and JDK 17.
 The [Kotlin compatibility table](https://kotlinlang.org/docs/gradle-configure-project.html)
 lists Gradle through 9.7.0 and AGP through 9.3.1. We use the newer 9.3.3 patch
 because 9.3.1's lint crashes on JDK 17; the fix is listed in the
 [AGP 9.3 patch release notes](https://developer.android.com/build/releases/agp-9-3-0-release-notes).
-This patch combination is checked with local tests, APK assembly and lint.
+Gradle uses the [9.7.1 maintenance release](https://docs.gradle.org/9.7.1/release-notes.html),
+one patch above Kotlin's listed Gradle maximum; this is not a claim of full vendor
+certification for the patch combination. It is checked locally with tests, APK
+assembly and lint.
 The wrapper distribution has a pinned SHA-256 checksum. FTC 12.0.0, Pedro 3.0.1,
 NextFTC 0.3.0 and Load/Sloth 0.3.2 remain unchanged. Legacy Android DSL and external
 Kotlin support remain enabled for the installed Load/Sloth integration; Gradle
@@ -122,9 +165,9 @@ includes the prior 133 checks, restored tuner and camera tests, geometry compari
 non-finite pose shutdown, and the shared-controller shooter tuning lifecycle.
 All hardware is doubled; installed Pedro/NextFTC/LQR implementations execute locally.
 
-Local results on 2026-10-28:
+Local results on 2026-10-29:
 
-- **155 external-suite tests passed**, zero failures, errors or skips.
+- **163 external-suite tests passed**, zero failures, errors or skips.
 - Debug APK assembly and Android lint passed offline.
 - Lint: **zero errors, 14 warnings** (12 inherited native-library alignment notices,
   one dependency-version notice, one unused resource). No detector was disabled.
@@ -133,8 +176,15 @@ Local results on 2026-10-28:
 - Installed NextFTC/follower/LQR tests cover driver controls, non-finite odometry,
   partial initialization and independent shutdown. Shooter tuning uses the actual
   shared controller with fake motors, including manual/LQR handoff and readiness.
-- APK DEX contains all 21 match auto classes, Robot, both new diagnostics,
-  location/vision subsystems and all five restored tuner classes.
+- All 21 autos run through the installed NextFTC wrapper in active and cancelled-INIT
+  tests. Cache invalidation is at most once per active frame; completed routines stop
+  polling. Scanner tests accept all 25 new entry constructors; the existing match
+  TeleOp lifecycle is covered separately. Collection uses one global scheduler tick
+  per frame. Fault injection verifies visible failure and independent shutdown.
+- Compact-display tests verify eight default rows, three optional rows, no repeated
+  timing dumps, and preserved controls without diagnostic drive-encoder reads.
+- APK DEX defines all 26 NextFTC entries, including all 21 autos and four diagnostics;
+  the location/vision subsystems and five restored tuner classes remain included.
 - TeleOp and subsystems each contain exactly five files. Manual increase/decrease
   is verified through both gamepads against the real shared shooter implementation.
   Source comparison confirms the five imported
@@ -150,7 +200,7 @@ Build/lint without accessing a robot:
 External regression command on this machine while the temporary sources exist:
 
 ```sh
-./gradlew :TeamCode:testDebugUnitTest :TeamCode:assembleDebug :TeamCode:lintDebug \
+./gradlew :TeamCode:testDebugUnitTest --rerun :TeamCode:assembleDebug :TeamCode:lintDebug \
   --init-script /private/tmp/biobuzz-validation.init.gradle --offline --console=plain
 ```
 

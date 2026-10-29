@@ -1,5 +1,6 @@
 package org.firstinspires.ftc.teamcode.subsystems
 
+import dev.nextftc.robot.Mechanism
 import com.pedropathing.localization.Localizer
 import com.pedropathing.localization.MotionState
 import com.pedropathing.math.Pose
@@ -18,7 +19,7 @@ internal class SnapshotLocalizer : Localizer {
 /** Location subsystem from the branch, adapted to the shared read phase and current Pedro units.
  * Getters, hive saves, aiming and the follower all use the same sample; none polls Pinpoint.
  */
-class RobotLocationSubsystem {
+class RobotLocationSubsystem : Mechanism {
     enum class Alliance { BLUE, RED }
     private val snapshot = SnapshotLocalizer()
     internal val localizer: Localizer get() = snapshot

@@ -4,7 +4,8 @@ import com.pedropathing.api.Paths
 import com.pedropathing.api.PoseFactory
 import com.pedropathing.math.Pose
 import com.pedropathing.paths.Path
-import com.qualcomm.robotcore.eventloop.opmode.Autonomous
+import dev.nextftc.robot.opmode.NextAutonomous
+import org.firstinspires.ftc.teamcode.teleop.NextRoutineOpMode
 import java.util.function.LongSupplier
 import kotlin.math.atan2
 import kotlin.math.cos
@@ -122,9 +123,10 @@ abstract class BioBuzzMainAuto(
         telemetry.addData("step", "${index + 1}/${route.steps.size} ${step.label} ${step.type}")
         telemetry.addData("time", "%.1f s (step %.1f s)",
             (nanoTime.asLong - started) / 1e9, (nanoTime.asLong - entered) / 1e9)
-        telemetry.addData("forced park", forcedPark)
+        if (forcedPark) telemetry.addData("forced park", true)
         telemetry.addData("mechanisms", if (feeding) "feeding" else if (step.intake) "collecting" else "waiting / spin-up")
-        telemetry.addData("sensor waits", "Timed fallback: camera, tip and hopper sensors unavailable")
+        if (step.type in listOf(StepType.WAIT_CELL_AUDIENCE, StepType.WAIT_CELL_REAR, StepType.WAIT_TIP))
+            telemetry.addData("sensor waits", "Timed fallback; sensors unavailable")
         super.reportTelemetry()
     }
 }
@@ -243,34 +245,52 @@ object MainRoutes {
 
 }
 
-@Autonomous(name = "MAIN left-020 (red)", group = "BioBuzz Main")
 class MainLeft020Red @JvmOverloads constructor(clock: LongSupplier = LongSupplier(System::nanoTime)) :
     BioBuzzMainAuto(MainRoutes.LEFT_020, false, clock)
 
-@Autonomous(name = "MAIN left-020 (blue)", group = "BioBuzz Main")
 class MainLeft020Blue @JvmOverloads constructor(clock: LongSupplier = LongSupplier(System::nanoTime)) :
     BioBuzzMainAuto(MainRoutes.LEFT_020, true, clock)
 
-@Autonomous(name = "MAIN left-034 (red)", group = "BioBuzz Main")
 class MainLeft034Red @JvmOverloads constructor(clock: LongSupplier = LongSupplier(System::nanoTime)) :
     BioBuzzMainAuto(MainRoutes.LEFT_034, false, clock)
 
-@Autonomous(name = "MAIN left-034 (blue)", group = "BioBuzz Main")
 class MainLeft034Blue @JvmOverloads constructor(clock: LongSupplier = LongSupplier(System::nanoTime)) :
     BioBuzzMainAuto(MainRoutes.LEFT_034, true, clock)
 
-@Autonomous(name = "MAIN right-004 (red)", group = "BioBuzz Main")
 class MainRight004Red @JvmOverloads constructor(clock: LongSupplier = LongSupplier(System::nanoTime)) :
     BioBuzzMainAuto(MainRoutes.RIGHT_004, false, clock)
 
-@Autonomous(name = "MAIN right-004 (blue)", group = "BioBuzz Main")
 class MainRight004Blue @JvmOverloads constructor(clock: LongSupplier = LongSupplier(System::nanoTime)) :
     BioBuzzMainAuto(MainRoutes.RIGHT_004, true, clock)
 
-@Autonomous(name = "MAIN right-022 (red)", group = "BioBuzz Main")
 class MainRight022Red @JvmOverloads constructor(clock: LongSupplier = LongSupplier(System::nanoTime)) :
     BioBuzzMainAuto(MainRoutes.RIGHT_022, false, clock)
 
-@Autonomous(name = "MAIN right-022 (blue)", group = "BioBuzz Main")
 class MainRight022Blue @JvmOverloads constructor(clock: LongSupplier = LongSupplier(System::nanoTime)) :
     BioBuzzMainAuto(MainRoutes.RIGHT_022, true, clock)
+
+
+// Keep the existing Driver Station names; NextFTC owns lifecycle and scheduling.
+@NextAutonomous(name = "MAIN left-020 (red)", group = "BioBuzz Main")
+class MainLeft020RedEntry : NextRoutineOpMode({ MainLeft020Red() })
+
+@NextAutonomous(name = "MAIN left-020 (blue)", group = "BioBuzz Main")
+class MainLeft020BlueEntry : NextRoutineOpMode({ MainLeft020Blue() })
+
+@NextAutonomous(name = "MAIN left-034 (red)", group = "BioBuzz Main")
+class MainLeft034RedEntry : NextRoutineOpMode({ MainLeft034Red() })
+
+@NextAutonomous(name = "MAIN left-034 (blue)", group = "BioBuzz Main")
+class MainLeft034BlueEntry : NextRoutineOpMode({ MainLeft034Blue() })
+
+@NextAutonomous(name = "MAIN right-004 (red)", group = "BioBuzz Main")
+class MainRight004RedEntry : NextRoutineOpMode({ MainRight004Red() })
+
+@NextAutonomous(name = "MAIN right-004 (blue)", group = "BioBuzz Main")
+class MainRight004BlueEntry : NextRoutineOpMode({ MainRight004Blue() })
+
+@NextAutonomous(name = "MAIN right-022 (red)", group = "BioBuzz Main")
+class MainRight022RedEntry : NextRoutineOpMode({ MainRight022Red() })
+
+@NextAutonomous(name = "MAIN right-022 (blue)", group = "BioBuzz Main")
+class MainRight022BlueEntry : NextRoutineOpMode({ MainRight022Blue() })
