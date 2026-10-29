@@ -1,4 +1,4 @@
-package org.firstinspires.ftc.teamcode.vision
+package org.firstinspires.ftc.teamcode.subsystems
 
 import com.bylazar.configurables.annotations.Configurable
 import com.qualcomm.hardware.limelightvision.Limelight3A

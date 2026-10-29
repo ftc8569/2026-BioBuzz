@@ -1,8 +1,10 @@
 package org.firstinspires.ftc.teamcode.teleop
 
+import org.firstinspires.ftc.teamcode.subsystems.ShooterSubsystem
+import org.firstinspires.ftc.teamcode.subsystems.ShooterController
 import com.bylazar.telemetry.JoinedTelemetry
 import com.bylazar.configurables.annotations.Configurable
-import org.firstinspires.ftc.teamcode.vision.VisionSubsystem
+import org.firstinspires.ftc.teamcode.subsystems.VisionSubsystem
 import com.qualcomm.hardware.lynx.LynxModule
 import com.qualcomm.robotcore.eventloop.opmode.OpMode
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp

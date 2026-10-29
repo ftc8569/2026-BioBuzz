@@ -10,12 +10,23 @@ TeleOp is organized into **five focused files** in `teleop/`. Start in
 | File | Responsibility |
 | --- | --- |
 | `teleop/Robot.kt` | Driver controls, hardware setup, match loop and safe shutdown |
-| `teleop/Drive.kt` | Drive and location subsystems, Pedro adapter, position hold and hive/pollen assists |
-| `teleop/Intake.kt` | Intake, collection assist, feed readiness and blocker delay |
-| `teleop/Shooter.kt` | Flywheels, blocker, LQR, presets and battery sampling |
+| `teleop/Drive.kt` | Pedro adapter, position hold and hive/pollen assists |
+| `teleop/Intake.kt` | Intake controls, collection assist, feed readiness and blocker delay |
+| `teleop/Shooter.kt` | Shooter button controls and manual power/preset adjustment |
 | `teleop/Telemetry.kt` | Driver Station/Panel displays, loop timings and diagnostic OpModes |
 
-The supporting code contains autonomous routines, vision and Pedro tools:
+The real subsystem implementations are in **`subsystems/`**, with one clearly
+named file for each subsystem:
+
+| File | Responsibility |
+| --- | --- |
+| [DriveSubsystem.kt](TeamCode/src/main/java/org/firstinspires/ftc/teamcode/subsystems/DriveSubsystem.kt) | Four drive motors and cached output commands |
+| [IntakeSubsystem.kt](TeamCode/src/main/java/org/firstinspires/ftc/teamcode/subsystems/IntakeSubsystem.kt) | Both intake motors and safe stop |
+| [ShooterSubsystem.kt](TeamCode/src/main/java/org/firstinspires/ftc/teamcode/subsystems/ShooterSubsystem.kt) | Flywheels, blocker, LQR, live tuning and battery sampling |
+| [RobotLocationSubsystem.kt](TeamCode/src/main/java/org/firstinspires/ftc/teamcode/subsystems/RobotLocationSubsystem.kt) | Shared pose snapshot and separate alliance hives |
+| [VisionSubsystem.kt](TeamCode/src/main/java/org/firstinspires/ftc/teamcode/subsystems/VisionSubsystem.kt) | Optional camera lifecycle and hive solver |
+
+The supporting code contains autonomous routines and Pedro tools:
 
 | File | Responsibility |
 | --- | --- |
@@ -25,11 +36,10 @@ The supporting code contains autonomous routines, vision and Pedro tools:
 | `pedro/Constants.java` | Installed Pedro configuration and existing calibration |
 | `pedro/Tuning.java` | Nine registered Pedro tuning/test procedures; shared Mecanum, Pinpoint, Foresight and Tests |
 | `pedro/procedures/` (five files) | Restored OTOS, OctoQuad, two-wheel, three-wheel and three-wheel + IMU tuners |
-| `vision/HiveVision.kt` | Optional VisionSubsystem, camera lifecycle and hive solver |
 
 Files are under `TeamCode/src/main/java/org/firstinspires/ftc/teamcode/`.
 The `teleop` directory still contains exactly the five files listed above.
-There are sixteen production source files total and 21 match autonomous entries.
+There are twenty production source files total and 21 match autonomous entries.
 The removed test files remain deleted; local regression validation uses an external
 source folder. Existing classes and comments keep driver decisions, hardware writes and LQR mathematics independently testable.
 For autonomous edits, start with `Autonomous.kt`; each route has its own class
@@ -60,7 +70,7 @@ lives in `teleop/Telemetry.kt`; match TeleOp does not start the camera.
 TeleOp retains its existing Driver Station name, **BioBuzz NextFTC Kotlin TeleOp**,
 so drivers can select the same entry. It now uses the current
 [NextFTC lifecycle](https://nextftc.dev/robot/nextopmode/) and command scheduler.
-The shared intake and shooter implementations are also used by the existing autos.
+The shared intake and shooter implementations in `subsystems/` are also used by the existing autos.
 
 All shooting modes use the same **0.6 intake feed power** and **100 ms blocker
 opening delay**. Basic autos feed for two full seconds after that delay; the longer
@@ -86,6 +96,11 @@ Shooter preset remains **0.72**, with the existing LQR tuning and routes.
 | G2 A | Toggle pollen sweep and collection; sticks, shooting/reverse or G1 A cancel |
 | G1 left-stick click | Toggle collection assist; initially on |
 | G1 right-stick click | Toggle detailed telemetry; initially on |
+
+Manual power adjustment is present: hold **G1 Y**, then press **either controller's
+D-pad up/down**. Each new press adds/subtracts **0.005**, for example
+**0.720 → 0.725 → 0.720**. Holding a D-pad direction does not repeatedly change it.
+The preset is limited to 0–1 and shared with the LQR RPM target; the default is 0.72.
 
 ### Battery and hardware traffic
 

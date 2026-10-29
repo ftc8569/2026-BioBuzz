@@ -17,12 +17,12 @@ import com.qualcomm.robotcore.util.RobotLog
 import java.util.function.LongSupplier
 import org.firstinspires.ftc.teamcode.pedro.Constants
 import org.firstinspires.ftc.teamcode.teleop.TelemetryRefresh
-import org.firstinspires.ftc.teamcode.teleop.ShooterController
-import org.firstinspires.ftc.teamcode.teleop.ShooterController.ControlMode
+import org.firstinspires.ftc.teamcode.subsystems.ShooterController
+import org.firstinspires.ftc.teamcode.subsystems.ShooterController.ControlMode
 import org.firstinspires.ftc.teamcode.teleop.SafeHardware
 import org.firstinspires.ftc.teamcode.teleop.IntakeFeed
-import org.firstinspires.ftc.teamcode.teleop.IntakeSubsystem
-import org.firstinspires.ftc.teamcode.teleop.ShooterSubsystem
+import org.firstinspires.ftc.teamcode.subsystems.IntakeSubsystem
+import org.firstinspires.ftc.teamcode.subsystems.ShooterSubsystem
 
 /** Original match autos and the shared lifecycle. Additional branch routes use this same base. */
 

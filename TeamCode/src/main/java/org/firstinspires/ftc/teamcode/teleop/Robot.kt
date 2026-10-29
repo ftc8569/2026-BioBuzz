@@ -1,5 +1,10 @@
 package org.firstinspires.ftc.teamcode.teleop
 
+import org.firstinspires.ftc.teamcode.subsystems.DriveSubsystem
+import org.firstinspires.ftc.teamcode.subsystems.IntakeSubsystem
+import org.firstinspires.ftc.teamcode.subsystems.ShooterSubsystem
+import org.firstinspires.ftc.teamcode.subsystems.RobotLocationSubsystem
+import org.firstinspires.ftc.teamcode.subsystems.ShooterController
 import com.bylazar.telemetry.PanelsTelemetry
 import com.pedropathing.math.Pose
 import com.pedropathing.revhub.localizers.PinpointLocalizer

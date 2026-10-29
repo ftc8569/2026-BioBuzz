@@ -11,8 +11,8 @@ import kotlin.math.cos
 import kotlin.math.hypot
 import kotlin.math.sin
 import org.firstinspires.ftc.teamcode.teleop.IntakeFeed
-import org.firstinspires.ftc.teamcode.teleop.ShooterController
-import org.firstinspires.ftc.teamcode.teleop.ShooterController.ControlMode
+import org.firstinspires.ftc.teamcode.subsystems.ShooterController
+import org.firstinspires.ftc.teamcode.subsystems.ShooterController.ControlMode
 
 /** The ri5w-autos FIFO route runner, using the current controller and guarded hardware lifecycle. */
 abstract class BioBuzzMainAuto(

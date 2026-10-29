@@ -45,16 +45,16 @@ added. No calibration or robot execution was performed during this integration.
 
 ## Subsystem map
 
-TeleOp remains **exactly five files**. Related classes live together rather than
-adding a second subsystem directory:
+TeleOp remains **exactly five control files**. The actual subsystem implementations
+now live in the separate `subsystems` package, in these five source files:
 
 | Subsystem | File | Ownership |
 | --- | --- | --- |
-| `DriveSubsystem` | `teleop/Drive.kt` | Buffered wheel requests and Pedro adapter |
-| `IntakeSubsystem` | `teleop/Intake.kt` | Shared intake outputs and feeding logic |
-| `ShooterSubsystem` | `teleop/Shooter.kt` | Existing LQR, flywheels and blocker |
-| `RobotLocationSubsystem` | `teleop/Drive.kt` | One captured pose, separate red/blue hives, heading and approach targets |
-| `VisionSubsystem` | `vision/HiveVision.kt` | Optional camera start/update/stop, cached getters and hive solver |
+| `DriveSubsystem` | `subsystems/DriveSubsystem.kt` | Buffered wheel requests and Pedro adapter |
+| `IntakeSubsystem` | `subsystems/IntakeSubsystem.kt` | Shared intake outputs and feeding logic |
+| `ShooterSubsystem` | `subsystems/ShooterSubsystem.kt` | Existing LQR, flywheels and blocker |
+| `RobotLocationSubsystem` | `subsystems/RobotLocationSubsystem.kt` | One captured pose, separate red/blue hives, heading and approach targets |
+| `VisionSubsystem` | `subsystems/VisionSubsystem.kt` | Optional camera start/update/stop, cached getters and hive solver |
 
 Location and vision adapt the branch subsystem responsibilities to this checkout.
 Location uses the existing single Pinpoint read in `RobotHardware`; getters and

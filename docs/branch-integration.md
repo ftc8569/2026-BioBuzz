@@ -10,7 +10,7 @@ TeleOp remains exactly five source files; autonomous code uses three files.
 | `ri5w-autos` — `d98058d` | Eight red/blue MAIN autos: left-020, left-034, right-004, right-022; all 92 original steps, via points, shot counts and route time limits | `autos/MainAutos.kt` |
 | `updates/preload-park-blocker-timing` — `4ae8faf` | Red/blue close/far preload parking curves and MoveForwardLeft | `autos/PreloadAutos.kt` |
 | `shreyas-josyula` — `66b6d1e` | Pollen sweep and separate red/blue saved hives, with the branch's approach offset | `teleop/Drive.kt` and `teleop/Robot.kt` |
-| `main`, `anirud-ri5w-autos`, `yatishgrandhe/manual-shooter` | Already ancestors of the starting checkout; existing Basic, collection and backup autos, subsystems and driver features retained | Existing five TeleOp files and `autos/Autonomous.kt` |
+| `main`, `anirud-ri5w-autos`, `yatishgrandhe/manual-shooter` | Already ancestors of the starting checkout; existing Basic, collection and backup autos, subsystems and driver features retained | `subsystems/`, five TeleOp control files and `autos/Autonomous.kt` |
 
 The old `BioBuzz Auto` entry on ri5w/shreyas is a TODO-only example with no
 START/LOOP path execution. It is superseded by the working Basic autos; no empty
@@ -50,7 +50,14 @@ now use current 0.78/0.65 blocker endpoints instead of their obsolete 0.24/0.45
 values. No PID controller or old Y-toggle mapping was reintroduced. See
 [shooter tuning](control/shooter-lqr.md#driver-controls-and-manual-tuning).
 
-TeleOp still contains five files; TeamCode has sixteen production source files.
+The actual subsystem implementations now live in five named files under
+`TeamCode/src/main/java/org/firstinspires/ftc/teamcode/subsystems/`: DriveSubsystem,
+IntakeSubsystem, ShooterSubsystem, RobotLocationSubsystem and VisionSubsystem.
+TeleOp still contains exactly five control files; TeamCode has twenty production
+source files. Imports in TeleOp, diagnostics and autos point to those implementations.
+The former bundled classes and old `vision/HiveVision.kt` are removed, so there are
+no duplicate hardware owners. Manual power adjustment remains in `teleop/Shooter.kt`:
+G1 Y selects manual; either D-pad changes the shared preset by 0.005 per press.
 No drive routes, match settings or existing button mappings were changed.
 
 ## Controls
@@ -117,7 +124,7 @@ All hardware is doubled; installed Pedro/NextFTC/LQR implementations execute loc
 
 Local results on 2026-10-28:
 
-- **154 external-suite tests passed**, zero failures, errors or skips.
+- **155 external-suite tests passed**, zero failures, errors or skips.
 - Debug APK assembly and Android lint passed offline.
 - Lint: **zero errors, 14 warnings** (12 inherited native-library alignment notices,
   one dependency-version notice, one unused resource). No detector was disabled.
@@ -128,7 +135,9 @@ Local results on 2026-10-28:
   shared controller with fake motors, including manual/LQR handoff and readiness.
 - APK DEX contains all 21 match auto classes, Robot, both new diagnostics,
   location/vision subsystems and all five restored tuner classes.
-- TeleOp contains exactly five files. Source comparison confirms the five imported
+- TeleOp and subsystems each contain exactly five files. Manual increase/decrease
+  is verified through both gamepads against the real shared shooter implementation.
+  Source comparison confirms the five imported
   tuner files share the same original revision across main, ri5w and shreyas.
 - No robot validation or battery-runtime measurement was performed.
 
