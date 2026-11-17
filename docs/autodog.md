@@ -60,8 +60,9 @@ sampled raw frames.
 ## Before trusting it
 
 - **Limelight intrinsics.** The defaults are nominal Limelight 3A values (640x480,
-  54.5 x 42 degrees). To calibrate, run `capture_calib.py` and then `calibrate.py` on the
-  stream, and pass `--calib`.
+  54.5 x 42 degrees). To calibrate, hold a chessboard in front of the Limelight and run
+  `python -m autodog.calib capture --source limelight`, then `python -m autodog.calib solve`,
+  and pass `--calib limelight_calib.json`.
 - **Mount.** Measure the lens height, pitch and forward offset. Then refine them with
   `autodog_run.py mount --source limelight`, using balls on tile corners.
 - **Color thresholds.** The HSV ranges in `python/autodog/detect.py` are starting points.
