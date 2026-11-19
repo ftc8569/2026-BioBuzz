@@ -66,3 +66,41 @@ class ChaseController(
 
     private fun clamp(v: Double, limit: Double) = v.coerceIn(-limit, limit)
 }
+
+/** What the chase OpModes do this loop. */
+enum class ChaseMode(val label: String) {
+    CHASE("CHASE"),
+    SEARCH("SEARCH"),
+    HOLD("HOLD (no target)"),
+    MANUAL("manual"),
+}
+
+/**
+ * Hold A to chase, A + B to also search when there is no target. Releasing A
+ * is the dead-man switch. A stale target never drives the robot.
+ */
+fun chooseChaseMode(aHeld: Boolean, bHeld: Boolean, freshTarget: Boolean): ChaseMode = when {
+    aHeld && freshTarget -> ChaseMode.CHASE
+    aHeld && bHeld -> ChaseMode.SEARCH
+    aHeld -> ChaseMode.HOLD
+    else -> ChaseMode.MANUAL
+}
+
+/** Drive and intake commands for a non-manual mode. */
+data class ChaseCommand(val power: DrivePower, val intakePower: Double)
+
+fun ChaseController.command(
+    mode: ChaseMode,
+    target: AutoDogTarget?,
+    now: Double,
+    robot: PlanarPose,
+    intakePower: Double,
+    searchTurn: Double,
+): ChaseCommand = when (mode) {
+    ChaseMode.CHASE -> {
+        val (gx, gy) = target!!.predictedTo(now)
+        ChaseCommand(compute(robot.x, robot.y, robot.theta, gx, gy), intakePower)
+    }
+    ChaseMode.SEARCH -> ChaseCommand(DrivePower(0.0, 0.0, searchTurn), 0.0)
+    ChaseMode.HOLD, ChaseMode.MANUAL -> ChaseCommand(DrivePower.STOP, 0.0)
+}

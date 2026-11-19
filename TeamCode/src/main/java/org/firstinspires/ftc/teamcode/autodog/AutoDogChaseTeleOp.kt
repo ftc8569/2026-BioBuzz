@@ -15,6 +15,17 @@ import org.firstinspires.ftc.teamcode.Subsytem.RobotLocationSubsystem
 /** ChaseController uses +left and +CCW; DriveSubsystem.drive uses +strafe right and +turn CW. */
 fun DriveSubsystem.driveChase(p: DrivePower) = drive(p.forward, -p.left, -p.turn)
 
+/** Copies the live Panels values into the controller; call every loop. */
+fun ChaseController.applyTuning(t: AutoDogTuning = AutoDogTuning) {
+    kTurn = t.kTurn
+    kForward = t.kForward
+    kStrafe = t.kStrafe
+    maxForward = t.maxForward
+    maxStrafe = t.maxStrafe
+    maxTurn = t.maxTurn
+    intakeOffset = t.intakeOffset
+}
+
 /** Live-tunable from Panels Configurables. Distances in meters unless named. */
 @Configurable
 object AutoDogTuning {
@@ -90,13 +101,7 @@ class AutoDogChaseTeleOp : LinearOpMode() {
         var lastLog = 0.0
         try {
             while (opModeIsActive()) {
-                chase.kTurn = tune.kTurn
-                chase.kForward = tune.kForward
-                chase.kStrafe = tune.kStrafe
-                chase.maxForward = tune.maxForward
-                chase.maxStrafe = tune.maxStrafe
-                chase.maxTurn = tune.maxTurn
-                chase.intakeOffset = tune.intakeOffset
+                chase.applyTuning()
 
                 val loc = location.getLocation()
                 val now = link.clock()
@@ -106,31 +111,12 @@ class AutoDogChaseTeleOp : LinearOpMode() {
 
                 val target = link.latestTarget
                 val fresh = target != null && target.hasTarget && target.age(now) < tune.maxTargetAgeS
-                val a = gamepad1.a
-                val mode: String
-                var power = DrivePower.STOP
-                when {
-                    a && fresh -> {
-                        val (gx, gy) = target!!.predictedTo(now)
-                        power = chase.compute(rx, ry, theta, gx, gy)
-                        intake.setPower(tune.intakePower)
-                        mode = "CHASE"
-                    }
-                    a && gamepad1.b -> {
-                        power = DrivePower(0.0, 0.0, tune.searchTurn)
-                        intake.setPower(0.0)
-                        mode = "SEARCH"
-                    }
-                    a -> {
-                        intake.setPower(0.0)
-                        mode = "HOLD (no target)"
-                    }
-                    else -> {
-                        intake.setPower(0.0)
-                        mode = "manual"
-                    }
-                }
-                if (mode == "manual") {
+                val chaseMode = chooseChaseMode(gamepad1.a, gamepad1.b, fresh)
+                val cmd = chase.command(chaseMode, target, now, PlanarPose(rx, ry, theta), tune.intakePower, tune.searchTurn)
+                val power = cmd.power
+                val mode = chaseMode.label
+                intake.setPower(cmd.intakePower)
+                if (chaseMode == ChaseMode.MANUAL) {
                     drive.drive(
                         -gamepad1.left_stick_y.toDouble(),
                         gamepad1.left_stick_x.toDouble(),
