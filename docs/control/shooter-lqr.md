@@ -29,7 +29,7 @@ manual-mode feed readiness waits three seconds; a preset or mode change restarts
 that wait. Match intake applies the 200 ms blocker-opening delay and
 full (1.0) feed power, as on main. G1 A retains its intake-stop priority.
 
-`Shooter Tuning` is a new diagnostic in `teleop/Telemetry.kt` that reuses the
+`Shooter Tuning` is a diagnostic in `teleop/Diagnostics.kt` that reuses the
 **same** `ShooterSubsystem`, `ShooterControls`, LQR implementation and telemetry.
 It only requires `shooter1`, `shooter2` and `blocker`. INIT keeps the flywheels stopped
 and leaves the blocker untouched while allowing D-pad preset adjustment; START enables the held-button controls

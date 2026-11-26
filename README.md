@@ -15,7 +15,8 @@ release notes, see [FTC-Docs](https://ftc-docs.firstinspires.org) and the upstre
 | `teleop/Drive.kt` | Pedro drivetrain adapter, shot position hold, hive approach / pollen sweep |
 | `teleop/Intake.kt` | `IntakeFeed`: one feed policy for TeleOp and autos |
 | `teleop/Shooter.kt` | Shooter buttons and preset (default 0.72 → 3240 RPM) |
-| `teleop/Telemetry.kt` | Driver Station + Panels telemetry, diagnostic and tuning OpModes |
+| `teleop/Telemetry.kt` | Shared Driver Station + Panels telemetry and loop timing |
+| `teleop/Diagnostics.kt` | Blocker, shooter motor, vision and shooter tuning test OpModes |
 | `subsystems/` | Drive, Intake, Shooter (LQR flywheel), RobotLocation, optional Limelight Vision |
 | `autos/Autonomous.kt` | `AutoOpMode` guarded lifecycle, `ShootCommand`, Basic / collection / backup autos |
 | `autos/MainAutos.kt` | Step-list runner and the four MAIN routes (red and blue) |
