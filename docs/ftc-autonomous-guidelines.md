@@ -13,8 +13,7 @@ never starts a routine. The collection auto owns an Ivy sequential group inside
 that frame, without a second call to the global scheduler.
 The original eight autos and the shared lifecycle live in `autos/Autonomous.kt`.
 `MainAutos.kt` adds eight imported sequence autos; `PreloadAutos.kt` adds four
-preload/park autos and a timed move, giving 21 entries. See
-[branch integration](branch-integration.md) for route provenance and limitations.
+preload/park autos and a timed move, giving 21 entries.
 START only runs a routine after READY. Basic autos advance through the measured
 speed gate, shared 100 ms blocker delay, two-second feed, and path following
 without blocking waits. The longer routine keeps its one-second feed per shot;
@@ -69,15 +68,9 @@ Local checks:
 ./gradlew :TeamCode:testDebugUnitTest :TeamCode:assembleDebug --console=plain
 ```
 
-The removed test files remain deleted. Local validation uses an external copy of
-the historical tests adapted to the consolidated packages, plus new subsystem and
-tuner regressions. It exercises installed Pedro/LQR and NextFTC with hardware
-doubles: route timing, READY guards, partial initialization, failed odometry,
-independent cleanup, driver controls and cache ownership. See
-[branch integration](branch-integration.md#build-and-validation) for the dated
-results and external source-set command. A normal test task with no sources does
-not run this suite. All evidence is local; no robot was installed, launched or run.
-Sensor-read counts do not establish measured battery runtime.
+This repository has no `src/test` sources, so `./gradlew test` runs nothing.
+Treat a passing build as compile evidence only; route timing, READY guards and
+cleanup still need fake-hardware tests or on-robot validation.
 
 ## Primary references reviewed
 

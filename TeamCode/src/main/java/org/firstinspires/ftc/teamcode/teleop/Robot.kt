@@ -57,7 +57,7 @@ class RobotSession internal constructor(private val panels: () -> Telemetry) :
 
     override fun afterConstruction(opMode: NextOpMode) = guarded(::afterEnd) {
         val devices = RobotHardware(opMode.hardwareMap).also { hardware = it }
-        val display = RobotTelemetry(opMode.telemetry, panels(), devices.profiler)
+        val display = RobotTelemetry(opMode.telemetry, panels())
         driver = DriverRobot(devices, display).also {
             it.bind(opMode.gamepad1, opMode.gamepad2, ::afterEnd)
             mechanisms = setOf(it)
@@ -84,7 +84,6 @@ internal class DriverRobot(
     private val drive = hardware.drive
     private val shooter = hardware.shooter
     private val hold = hardware.hold
-    private val profiler = hardware.profiler
     private val location: Pose get() = hardware.pose
     private val g1 = Gamepad()
     private val g2 = Gamepad()
@@ -126,21 +125,16 @@ internal class DriverRobot(
     fun start() {
         loopTiming.reset()
         telemetry.reset()
-        profiler.reset()
         hardware.start()
     }
 
     fun update(gamepad1: Gamepad, gamepad2: Gamepad) {
-        profiler.beginLoop()
-        try {
-            captureControls(gamepad1, gamepad2)
-            hardware.read(false)
-            profiler.measure(LoopStage.COMPUTE) { updateDrive(); updateMechanisms() }
-            hardware.write()
-            updateTelemetry()
-        } finally {
-            profiler.endLoop()
-        }
+        captureControls(gamepad1, gamepad2)
+        hardware.read()
+        updateDrive()
+        updateMechanisms()
+        hardware.write()
+        updateTelemetry()
     }
 
     fun captureControls(gamepad1: Gamepad, gamepad2: Gamepad) {
@@ -153,7 +147,7 @@ internal class DriverRobot(
         }
     }
 
-    internal fun updateDrive() = profiler.measure(LoopStage.DRIVE_TOTAL) {
+    internal fun updateDrive() {
         val selected = if (g2.dpad_left) RobotLocationSubsystem.Alliance.BLUE
             else if (g2.dpad_right) RobotLocationSubsystem.Alliance.RED else hiveAlliance
         if (selected != hiveAlliance) {
@@ -186,9 +180,7 @@ internal class DriverRobot(
         val turn = aimedTurn(g1.right_stick_x.toDouble())
         val shooting = (g1.right_bumper || g1.y) && !g1.left_bumper
         if (shooting && !hold.active) aiming = false
-        val holding = (shooting || hold.active) && profiler.measure(LoopStage.DRIVE_HOLD) {
-            hold.update(shooting, location)
-        }
+        val holding = (shooting || hold.active) && hold.update(shooting, location)
         if (!holding && !pollen.update(location, drive))
             drive.drive(-g1.left_stick_y.toDouble(), g1.left_stick_x.toDouble(), turn)
     }
@@ -205,15 +197,13 @@ internal class DriverRobot(
             else manual
     }
 
-    internal fun updateMechanisms() = profiler.measure(LoopStage.MECHANISMS_TOTAL) {
+    internal fun updateMechanisms() {
         driveIntakeControls.update(g1.left_stick_button)
         shooterControls.update(g1.y, up, down)
         shooterPower = shooterControls.requestedPower(g1.left_bumper, g1.right_bumper)
-        profiler.measure(LoopStage.SHOOTER_CONTROL) {
-            shooter.setControlMode(shooterControls.mode)
-            if (shooterPower > 0.0) shooter.updateShot(shooterPower, shooterControls.mode)
-            else shooter.setFlywheelPower(shooterPower)
-        }
+        shooter.setControlMode(shooterControls.mode)
+        if (shooterPower > 0.0) shooter.updateShot(shooterPower, shooterControls.mode)
+        else shooter.setFlywheelPower(shooterPower)
         shooter.setManualBlockerOpen(manualBlocker)
         val manualIntake = when {
             g1.right_trigger > 0.05 -> g1.right_trigger.toDouble()
@@ -283,11 +273,7 @@ private fun Gamepad.sample(source: Gamepad) {
 }
 
 /** Construct once during INIT. Controllers use these objects for the entire match. */
-internal class RobotHardware(
-    map: HardwareMap,
-    val profiler: LoopProfiler = LoopProfiler(),
-    nanoTime: () -> Long = System::nanoTime
-) : AutoCloseable {
+internal class RobotHardware(map: HardwareMap, nanoTime: () -> Long = System::nanoTime) : AutoCloseable {
     private val safety = SafeHardware()
     val drive: DriveSubsystem
     val intake: IntakeSubsystem
@@ -295,12 +281,8 @@ internal class RobotHardware(
     val hold: ShootingDriveHold
     private val pinpoint: PinpointLocalizer
     val location = RobotLocationSubsystem()
-    private val driveMotors: List<DcMotor>
-    private val encoders = IntArray(4)
-    private val inputs: BulkInputReader
+    private val feedbackHubs: List<LynxModule>
     val pose: Pose get() = location.pose
-    var encoderPositions: IntArray? = null
-        private set
 
     init {
         try {
@@ -308,21 +290,18 @@ internal class RobotHardware(
             safety.prepareMotors(map, true)
             drive = DriveSubsystem(map).apply { enablePhasedIo() }
             intake = IntakeSubsystem(map).apply { enablePhasedIo() }
-            shooter = ShooterSubsystem(map, nanoTime).apply {
-                loopProfiler = profiler
-                enablePhasedIo()
-            }
+            shooter = ShooterSubsystem(map, nanoTime).apply { enablePhasedIo() }
             safety.onStop { shooter.stopVoltagePolling() }
             pinpoint = PinpointLocalizer(map, Constants.localizerConfig)
             val drivetrain = BufferedMecanum(drive::requestWheelPowers)
             hold = ShootingDriveHold(Constants.create(location.localizer, drivetrain))
             safety.onStop { hold.stop() }
-            driveMotors = SafeHardware.DRIVE_NAMES.map { map.get(DcMotor::class.java, it) }
             val hubs = map.getAll(LynxModule::class.java)
             safety.setCaching(hubs, LynxModule.BulkCachingMode.MANUAL)
-            inputs = BulkInputReader(hubs,
-                listOf("shooter1", "shooter2").map { map.get(DcMotor::class.java, it) },
-                driveMotors)
+            // Only the hub with the shooter encoders needs a bulk read each loop.
+            val shooterHubs = listOf("shooter1", "shooter2")
+                .map { map.get(DcMotor::class.java, it).controller.connectionInfo }.toSet()
+            feedbackHubs = hubs.filter { it.connectionInfo in shooterHubs }
             shooter.startVoltagePolling()
         } catch (failure: Throwable) {
             throw safety.stop(failure)!!
@@ -330,49 +309,25 @@ internal class RobotHardware(
     }
 
     fun start() {
-        profiler.measure(LoopStage.LOCATION_RESET) {
-            pinpoint.setPose(Pose.zero())
-            location.reset()
-        }
+        pinpoint.setPose(Pose.zero())
+        location.reset()
     }
 
-    fun read(diagnostics: Boolean) = profiler.measure(LoopStage.READ_INPUTS) {
-        profiler.measure(LoopStage.BULK_READ) { inputs.read(diagnostics) }
+    /** getBulkData refreshes the MANUAL cache once per loop, then sensors read cached values. */
+    fun read() {
+        feedbackHubs.forEach { it.bulkData }
         shooter.beginFrame()
-        encoderPositions = if (diagnostics) profiler.measure(LoopStage.DRIVE_ENCODERS) {
-            for (i in encoders.indices) encoders[i] = driveMotors[i].currentPosition
-            encoders
-        } else null
-        profiler.measure(LoopStage.PINPOINT) {
-            pinpoint.update()
-            location.capture(pinpoint.state())
-        }
+        pinpoint.update()
+        location.capture(pinpoint.state())
     }
 
-    fun write() = profiler.measure(LoopStage.WRITE_OUTPUTS) {
-        profiler.measure(LoopStage.DRIVE_OUTPUT) { drive.commitOutputs() }
+    fun write() {
+        drive.commitOutputs()
         shooter.commitOutputs()
-        profiler.measure(LoopStage.INTAKE_OUTPUT) { intake.commitOutputs() }
+        intake.commitOutputs()
     }
 
     override fun close() { safety.stop(null)?.let { throw it } }
-}
-
-/** Resolve hub ownership once; getBulkData refreshes MANUAL caches once per active read. */
-internal class BulkInputReader(
-    hubs: List<LynxModule>, feedback: List<DcMotor>, diagnostics: List<DcMotor>
-) {
-    private val feedbackConnections = feedback.map { it.controller.connectionInfo }.toSet()
-    private val diagnosticConnections = diagnostics.map { it.controller.connectionInfo }.toSet()
-    private val feedbackHubs = hubs.filter { it.connectionInfo in feedbackConnections }
-    private val diagnosticHubs = hubs.filter {
-        it !in feedbackHubs && it.connectionInfo in diagnosticConnections
-    }
-
-    fun read(includeDiagnostics: Boolean) {
-        feedbackHubs.forEach { it.bulkData }
-        if (includeDiagnostics) diagnosticHubs.forEach { it.bulkData }
-    }
 }
 
 /** Retain devices before setup writes, so even failed constructors can stop them. */

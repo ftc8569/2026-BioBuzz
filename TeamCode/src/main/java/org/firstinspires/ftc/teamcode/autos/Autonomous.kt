@@ -26,11 +26,14 @@ import org.firstinspires.ftc.teamcode.subsystems.ShooterSubsystem
 
 /** Original match autos and the shared lifecycle. Additional branch routes use this same base. */
 
+/** Routes are authored for red; blue rotates them 180 degrees about the field center. */
+internal fun alliancePose(blue: Boolean, x: Double, y: Double, heading: Double): Pose =
+    if (blue) PoseFactory.degrees().of(141.5 - x, 141.5 - y, heading + 180.0)
+    else PoseFactory.degrees().of(x, y, heading)
+
 // region Basic autos: shoot for two seconds, then follow the exported parking line
 
-open class BioBuzzAuto @JvmOverloads constructor(
-    clock: LongSupplier = LongSupplier(System::nanoTime)
-) : AutoOpMode(clock) {
+open class BioBuzzAuto(clock: LongSupplier = LongSupplier(System::nanoTime)) : AutoOpMode(clock) {
     private val feed = IntakeFeed(clock::getAsLong)
     private var feedingStarted: Long? = null
     private var driving = false
@@ -85,9 +88,7 @@ open class BioBuzzAuto @JvmOverloads constructor(
 }
 
 /** Same two-second shot as BasicRed; coordinates come from basicblue.pp. */
-class BasicBlueAuto @JvmOverloads constructor(
-    clock: LongSupplier = LongSupplier(System::nanoTime)
-) : BioBuzzAuto(clock) {
+class BasicBlueAuto : BioBuzzAuto() {
     override fun startingPose(): Pose =
         PoseFactory.degrees().of(83.07841726618705, 132.19424460431654, 90.0)
     override fun buildPath(start: Pose): Path =
@@ -99,17 +100,13 @@ class BasicBlueAuto @JvmOverloads constructor(
 
 // region Collection autos: shoot, collect, return, shoot, park
 
-open class BioBuzzRed1_5 @JvmOverloads constructor(private val blue: Boolean = false) : AutoOpMode() {
+class BioBuzzRed1_5(private val blue: Boolean = false) : AutoOpMode() {
     private lateinit var path1: Path
     private lateinit var path2: Path
     private lateinit var path3: Path
     private var routine: Command? = null
 
-    /** Rotate the red route 180 degrees about field center for blue. */
-    private fun pose(x: Double, y: Double, heading: Double): Pose = PoseFactory.degrees().of(
-        if (blue) 141.5 - x else x, if (blue) 141.5 - y else y,
-        heading + if (blue) 180.0 else 0.0
-    )
+    private fun pose(x: Double, y: Double, heading: Double) = alliancePose(blue, x, y, heading)
 
     override fun startingPose(): Pose = pose(58.4934, 9.0389, -90.0)
 
@@ -173,13 +170,11 @@ open class BioBuzzRed1_5 @JvmOverloads constructor(private val blue: Boolean = f
     }
 }
 
-class BioBuzzAutoBlue : BioBuzzRed1_5(true)
-
 // endregion
 
 // region Backup autos: drive one line to park, with no shooter initialization
 
-abstract class BioBuzzBackupAuto(
+class BioBuzzBackupAuto(
     blue: Boolean, private val startX: Double, private val startY: Double,
     private val startHeadingDeg: Double, private val endHeadingDeg: Double,
     private val parkY: Double
@@ -206,20 +201,12 @@ abstract class BioBuzzBackupAuto(
     }
 }
 
-class BackupAutoBlueLeft : BioBuzzBackupAuto(true, 112.1, 7.8, -90.0, 0.0, 35.5)
-
-class BackupAutoBlueRight : BioBuzzBackupAuto(true, 133.7, 74.7, 180.0, 360.0, 35.5)
-
-class BackupAutoRedLeft : BioBuzzBackupAuto(false, 29.4, 133.7, 90.0, 180.0, 106.0)
-
-class BackupAutoRedRight : BioBuzzBackupAuto(false, 7.8, 66.8, 0.0, 180.0, 106.0)
-
 // endregion
 
 // region Shared shooting command and guarded lifecycle
 
 /** Hold position and perform right-bumper shooting, finishing after one second of transfer. */
-class ShootCommand @JvmOverloads constructor(
+class ShootCommand(
     follower: Follower,
     shooter: ShooterSubsystem,
     intake: IntakeSubsystem,
@@ -419,7 +406,6 @@ abstract class AutoOpMode protected constructor(
 
 // endregion
 
-
 // Keep the existing Driver Station names; NextFTC owns lifecycle and scheduling.
 @NextAutonomous(name = "BasicRed Auto")
 class BioBuzzAutoEntry : NextRoutineOpMode({ BioBuzzAuto() })
@@ -428,19 +414,19 @@ class BioBuzzAutoEntry : NextRoutineOpMode({ BioBuzzAuto() })
 class BasicBlueAutoEntry : NextRoutineOpMode({ BasicBlueAuto() })
 
 @NextAutonomous(name = "BioBuzzRed1.5")
-class BioBuzzRed1_5Entry : NextRoutineOpMode({ BioBuzzRed1_5() })
+class BioBuzzRed1_5Entry : NextRoutineOpMode({ BioBuzzRed1_5(blue = false) })
 
 @NextAutonomous(name = "BioBuzz Auto Blue")
-class BioBuzzAutoBlueEntry : NextRoutineOpMode({ BioBuzzAutoBlue() })
+class BioBuzzAutoBlueEntry : NextRoutineOpMode({ BioBuzzRed1_5(blue = true) })
 
 @NextAutonomous(name = "Backup Blue Left", group = "Backup")
-class BackupAutoBlueLeftEntry : NextRoutineOpMode({ BackupAutoBlueLeft() })
+class BackupAutoBlueLeftEntry : NextRoutineOpMode({ BioBuzzBackupAuto(true, 112.1, 7.8, -90.0, 0.0, 35.5) })
 
 @NextAutonomous(name = "Backup Blue Right", group = "Backup")
-class BackupAutoBlueRightEntry : NextRoutineOpMode({ BackupAutoBlueRight() })
+class BackupAutoBlueRightEntry : NextRoutineOpMode({ BioBuzzBackupAuto(true, 133.7, 74.7, 180.0, 360.0, 35.5) })
 
 @NextAutonomous(name = "Backup Red Left", group = "Backup")
-class BackupAutoRedLeftEntry : NextRoutineOpMode({ BackupAutoRedLeft() })
+class BackupAutoRedLeftEntry : NextRoutineOpMode({ BioBuzzBackupAuto(false, 29.4, 133.7, 90.0, 180.0, 106.0) })
 
 @NextAutonomous(name = "Backup Red Right", group = "Backup")
-class BackupAutoRedRightEntry : NextRoutineOpMode({ BackupAutoRedRight() })
+class BackupAutoRedRightEntry : NextRoutineOpMode({ BioBuzzBackupAuto(false, 7.8, 66.8, 0.0, 180.0, 106.0) })

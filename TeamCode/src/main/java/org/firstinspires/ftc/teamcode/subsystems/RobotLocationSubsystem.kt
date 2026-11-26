@@ -4,7 +4,6 @@ import dev.nextftc.robot.Mechanism
 import com.pedropathing.localization.Localizer
 import com.pedropathing.localization.MotionState
 import com.pedropathing.math.Pose
-import org.firstinspires.ftc.teamcode.teleop.hiveApproach
 
 /** Pedro sees the same immutable pose/velocity sample as every other controller. */
 internal class SnapshotLocalizer : Localizer {
@@ -36,7 +35,6 @@ class RobotLocationSubsystem : Mechanism {
 
     fun savedHive(alliance: Alliance): Pose? = hives[alliance.ordinal]
     fun saveHive(alliance: Alliance) { hives[alliance.ordinal] = pose }
-    fun approachTarget(alliance: Alliance): Pose? = savedHive(alliance)?.let(::hiveApproach)
     fun headingToHive(alliance: Alliance): Double? = savedHive(alliance)?.let {
         kotlin.math.atan2(it.y() - pose.y(), it.x() - pose.x())
     }

@@ -39,31 +39,6 @@ import org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit;
 /** Pedro 3 tuner registry. Factories create procedures without opening hardware. */
 public class Tuning {
   @Tuner
-  public static Procedure otosTuner() {
-    return new org.firstinspires.ftc.teamcode.pedro.procedures.OTOSTuner();
-  }
-
-  @Tuner
-  public static Procedure octoQuadTuner() {
-    return new org.firstinspires.ftc.teamcode.pedro.procedures.OctoQuadTuner();
-  }
-
-  @Tuner
-  public static Procedure twoWheelTuner() {
-    return new org.firstinspires.ftc.teamcode.pedro.procedures.TwoWheelTuner();
-  }
-
-  @Tuner
-  public static Procedure threeWheelTuner() {
-    return new org.firstinspires.ftc.teamcode.pedro.procedures.ThreeWheelTuner();
-  }
-
-  @Tuner
-  public static Procedure threeWheelIMUTuner() {
-    return new org.firstinspires.ftc.teamcode.pedro.procedures.ThreeWheelIMUTuner();
-  }
-
-  @Tuner
   public static Procedure mecanumTuner() {
     return new MecanumTuner();
   }

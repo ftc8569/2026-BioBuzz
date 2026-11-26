@@ -1,7 +1,6 @@
 package org.firstinspires.ftc.teamcode.autos
 
 import com.pedropathing.api.Paths
-import com.pedropathing.api.PoseFactory
 import com.pedropathing.math.Pose
 import com.pedropathing.paths.Path
 import dev.nextftc.robot.opmode.NextAutonomous
@@ -9,16 +8,10 @@ import org.firstinspires.ftc.teamcode.teleop.NextRoutineOpMode
 import com.qualcomm.robotcore.hardware.DcMotor
 import com.qualcomm.robotcore.hardware.DcMotorEx
 import com.qualcomm.robotcore.hardware.DcMotorSimple
-import java.util.function.LongSupplier
 
 /** Routes from updates/preload-park-blocker-timing; shared LQR and two-second feed are unchanged. */
-abstract class PreloadParkAuto(
-    private val blue: Boolean, private val close: Boolean, clock: LongSupplier
-) : BioBuzzAuto(clock) {
-    private fun pose(x: Double, y: Double, heading: Double): Pose = PoseFactory.degrees().of(
-        if (blue) 141.5 - x else x, if (blue) 141.5 - y else y,
-        heading + if (blue) 180.0 else 0.0
-    )
+class PreloadParkAuto(private val blue: Boolean, private val close: Boolean) : BioBuzzAuto() {
+    private fun pose(x: Double, y: Double, heading: Double) = alliancePose(blue, x, y, heading)
     override fun startingPose(): Pose = pose(58.4934, if (close) 6.6 else 9.0389, -90.0)
     override fun buildPath(start: Pose): Path {
         val control = if (close) pose(58.2467, 97.8414, 0.0) else pose(57.8311, 121.1131, 0.0)
@@ -27,21 +20,8 @@ abstract class PreloadParkAuto(
     }
 }
 
-class RedPreloadParkClose @JvmOverloads constructor(clock: LongSupplier = LongSupplier(System::nanoTime)) :
-    PreloadParkAuto(false, true, clock)
-
-class RedPreloadParkFar @JvmOverloads constructor(clock: LongSupplier = LongSupplier(System::nanoTime)) :
-    PreloadParkAuto(false, false, clock)
-
-class BluePreloadParkClose @JvmOverloads constructor(clock: LongSupplier = LongSupplier(System::nanoTime)) :
-    PreloadParkAuto(true, true, clock)
-
-class BluePreloadParkFar @JvmOverloads constructor(clock: LongSupplier = LongSupplier(System::nanoTime)) :
-    PreloadParkAuto(true, false, clock)
-
 /** Quarter-second diagonal move. Needs only four drive motors, with the same guarded cleanup. */
-class MoveForwardLeft @JvmOverloads constructor(clock: LongSupplier = LongSupplier(System::nanoTime)) :
-    AutoOpMode(clock) {
+class MoveForwardLeft : AutoOpMode() {
     private var motors = emptyList<DcMotorEx>()
     private var started = 0L
     override fun usesShooter() = false
@@ -66,19 +46,18 @@ class MoveForwardLeft @JvmOverloads constructor(clock: LongSupplier = LongSuppli
     }
 }
 
-
 // Keep the existing Driver Station names; NextFTC owns lifecycle and scheduling.
 @NextAutonomous(name = "RedPreloadParkClose")
-class RedPreloadParkCloseEntry : NextRoutineOpMode({ RedPreloadParkClose() })
+class RedPreloadParkCloseEntry : NextRoutineOpMode({ PreloadParkAuto(blue = false, close = true) })
 
 @NextAutonomous(name = "RedPreloadParkFar")
-class RedPreloadParkFarEntry : NextRoutineOpMode({ RedPreloadParkFar() })
+class RedPreloadParkFarEntry : NextRoutineOpMode({ PreloadParkAuto(blue = false, close = false) })
 
 @NextAutonomous(name = "BluePreloadParkClose")
-class BluePreloadParkCloseEntry : NextRoutineOpMode({ BluePreloadParkClose() })
+class BluePreloadParkCloseEntry : NextRoutineOpMode({ PreloadParkAuto(blue = true, close = true) })
 
 @NextAutonomous(name = "BluePreloadParkFar")
-class BluePreloadParkFarEntry : NextRoutineOpMode({ BluePreloadParkFar() })
+class BluePreloadParkFarEntry : NextRoutineOpMode({ PreloadParkAuto(blue = true, close = false) })
 
 @NextAutonomous(name = "MoveForwardLeft")
 class MoveForwardLeftEntry : NextRoutineOpMode({ MoveForwardLeft() })
