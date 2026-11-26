@@ -1,17 +1,36 @@
 # BioBuzz robot code (FTC 2026–27)
 
-FIRST Tech Challenge robot built on FTC SDK 12.0, Pedro Pathing 3 and Panels. Every
-OpMode is a plain SDK `@TeleOp` / `@Autonomous` class: no command framework sits
-between the SDK lifecycle and the robot code. Team code is in
+FIRST Tech Challenge robot built on FTC SDK 12.0, [NextFTC](https://nextftc.dev) 1.1,
+Pedro Pathing 3 and Panels. Team code is in
 `TeamCode/src/main/java/org/firstinspires/ftc/teamcode/`. For the SDK's own docs and
 release notes, see [FTC-Docs](https://ftc-docs.firstinspires.org) and the upstream
 [FtcRobotController](https://github.com/FIRST-Tech-Challenge/FtcRobotController) repo.
+
+## How NextFTC is used
+
+- **OpModes.** Every team OpMode extends `NextFTCOpMode` and overrides `onInit`,
+  `onWaitForStart`, `onStartButtonPressed`, `onUpdate` and `onStop`. (Pedro's tuner
+  OpModes in `pedro/Tuning.java` are Pedro's own and stay as they are.)
+- **Components.** TeleOp and Shooter Tuning add `GamepadSnapshot` (copies both gamepads
+  once per loop) and NextFTC's `BindingsComponent`, in that order.
+- **Bindings.** Buttons are NextFTC bindings, e.g. `button { g1.x } whenBecomesTrue { ... }`,
+  registered at START so INIT presses do nothing.
+- **Subsystems and commands.** Drive, Intake, Shooter, RobotLocation and Vision implement
+  NextFTC `Subsystem`. The collection auto is a NextFTC `SequentialGroup` of `ShootCommand`
+  and `LambdaCommand` path followers.
+- **What is deliberately not used.**
+  - NextFTC's Pedro extension targets Pedro 2, so path commands are written here for Pedro 3.
+  - `BulkReadComponent` clears every hub and never restores the cache mode, so
+    `RobotHardware` and `AutoOpMode` keep their own once-per-loop bulk reads.
+  - `CommandManager` and `SubsystemComponent` are not used to run the code: NextFTC skips
+    `onStop` after an exception, so each OpMode runs its commands and hardware inside its
+    own guarded `onUpdate`, which can always shut down safely.
 
 ## Code map
 
 | Path | Responsibility |
 | --- | --- |
-| `teleop/Robot.kt` | Match TeleOp, driver controls, hardware setup, read → compute → write loop, `SafeHardware` shutdown |
+| `teleop/Robot.kt` | Match TeleOp, driver bindings, `GamepadSnapshot`, hardware setup, read → compute → write loop, `SafeHardware` shutdown |
 | `teleop/Drive.kt` | Pedro drivetrain adapter, shot position hold, hive approach / pollen sweep |
 | `teleop/Intake.kt` | `IntakeFeed`: one feed policy for TeleOp and autos |
 | `teleop/Shooter.kt` | Shooter buttons and preset (default 0.72 → 3240 RPM) |
@@ -112,7 +131,7 @@ Shooter tuning details: [SHOOTER_TUNING.md](TeamCode/SHOOTER_TUNING.md) and
 ./gradlew deploySloth                  # fast TeamCode-only reload afterwards
 ```
 
-Gradle 9.7.1, Kotlin 2.4.21, AGP 9.3.3, JDK 17. Connect over USB or robot Wi-Fi
+Gradle 9.9.2, Kotlin 2.4.21, AGP 9.5.3, JDK 17. Connect over USB or robot Wi-Fi
 (`adb connect 192.168.43.1:5555`) first; Sloth does not auto-connect.
 Panels: <http://192.168.43.1:8001> (Control Hub).
 Agents must not deploy to the robot; see [AGENTS.md](AGENTS.md).

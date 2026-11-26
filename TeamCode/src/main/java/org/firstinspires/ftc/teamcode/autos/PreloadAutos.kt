@@ -42,7 +42,7 @@ class MoveForwardLeft : AutoOpMode() {
         motors.forEachIndexed { i, motor -> motor.power = if (i == 1 || i == 2) 0.5 else 0.0 }
     }
     override fun updateRoutine() {
-        if (nanoTime.asLong - started >= 250_000_000L) stop()
+        if (nanoTime.asLong - started >= 250_000_000L) finish()
     }
 }
 

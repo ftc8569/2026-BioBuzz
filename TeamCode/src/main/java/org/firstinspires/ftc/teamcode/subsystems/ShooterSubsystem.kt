@@ -1,5 +1,6 @@
 package org.firstinspires.ftc.teamcode.subsystems
 
+import dev.nextftc.core.subsystems.Subsystem
 import com.bylazar.configurables.annotations.Configurable
 import com.qualcomm.robotcore.hardware.*
 import com.qualcomm.robotcore.hardware.configuration.annotations.DeviceProperties
@@ -17,7 +18,7 @@ import org.firstinspires.ftc.teamcode.teleop.LoopTiming
 import org.firstinspires.ftc.teamcode.teleop.outputWrites
 
 /** Two flywheels and the blocker. TeleOp: beginFrame → update → commitOutputs per loop; autos write immediately. */
-class ShooterSubsystem(hardwareMap: HardwareMap, nanoTime: () -> Long = System::nanoTime) {
+class ShooterSubsystem(hardwareMap: HardwareMap, nanoTime: () -> Long = System::nanoTime) : Subsystem {
     val control = ShooterController(nanoTime)
     private val motors = listOf("shooter1", "shooter2").map { hardwareMap.get(DcMotorEx::class.java, it) }
     private val blocker = hardwareMap.get(Servo::class.java, "blocker")

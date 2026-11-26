@@ -39,7 +39,7 @@ open class BioBuzzMainAuto(
     }
 
     private fun enter(next: Int) {
-        if (next >= route.steps.size) { stop(); return }
+        if (next >= route.steps.size) { finish(); return }
         index = next
         entered = nanoTime.asLong
         previousFrame = entered
@@ -59,7 +59,7 @@ open class BioBuzzMainAuto(
     override fun updateRoutine() {
         val now = nanoTime.asLong
         // Stop at the match limit even when a route never settles or the RPM gate never opens.
-        if (now - started >= 30_000_000_000L) { stop(); return }
+        if (now - started >= 30_000_000_000L) { finish(); return }
         operation = "LOOP Pedro / Pinpoint"
         follower.update()
         if (!forcedPark && index < route.steps.lastIndex &&

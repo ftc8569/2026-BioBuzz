@@ -1,15 +1,17 @@
 # FTC autonomous reliability
 
-This project uses FTC SDK 12.0.0, Pedro 3.0.1, and the repository's voltage-based
+This project uses FTC SDK 12.0.0, NextFTC 1.1.0, Pedro 3.0.2, and the repository's voltage-based
 LQR shooter. Online examples using older `followPath`/`PathChain` APIs must be
 translated against the installed library, rather than copied directly.
 
 ## Lifecycle and failure handling
 
-Every match auto is a plain SDK `@Autonomous` OpMode built on `AutoOpMode`, which
+Every match auto is a NextFTC `@Autonomous` OpMode built on `AutoOpMode`, which
 initializes devices and the route before becoming READY. STOP during INIT never
-starts a routine. The collection auto runs its Ivy sequential group directly from
-`loop()`. The blocker servo is not moved until START (as on main).
+starts a routine. The collection auto runs its NextFTC `SequentialGroup` directly from
+`onUpdate()` (not through CommandManager, so failures stay inside the guarded shutdown).
+Routines end early with `finish()`; `LinearOpMode` does not allow overriding `stop()`.
+The blocker servo is not moved until START (as on main).
 The original eight autos and the shared lifecycle live in `autos/Autonomous.kt`.
 `MainAutos.kt` adds eight imported sequence autos; `PreloadAutos.kt` adds four
 preload/park autos and a timed move, giving 21 entries.
@@ -76,7 +78,7 @@ cleanup still need on-robot validation.
 - [FIRST SDK repository](https://github.com/FIRST-Tech-Challenge/FtcRobotController)
   and its [bulk-read sample](https://github.com/FIRST-Tech-Challenge/FtcRobotController/blob/master/FtcRobotController/src/main/java/org/firstinspires/ftc/robotcontroller/external/samples/ConceptMotorBulkRead.java):
   hub caching and reuse of sampled inputs.
-- [Pedro 3.0.1 Follower source](https://github.com/Pedro-Pathing/PedroPathing/blob/v3.0.1/core/src/main/java/com/pedropathing/follower/Follower.java):
+- [Pedro 3.0.2 Follower source](https://github.com/Pedro-Pathing/PedroPathing/blob/v3.0.2/core/src/main/java/com/pedropathing/follower/Follower.java):
   `stop()` changes state; `update()` reads localization and applies outputs.
 - [Pedro autonomous lifecycle](https://pedropathing.com/docs/pathing/guide/setting-up-auto),
   [heading interpolation](https://pedropathing.com/docs/pathing/reference/interpolation),
@@ -93,8 +95,8 @@ full seconds of transfer. The longer routine retains its one-second transfer.
 Manual reverse, stop, collection assist, and the manual-mode blocker override
 remain available in TeleOp. Collection path powers and route coordinates are unchanged.
 
-TeleOp is a plain SDK `OpMode`. Each INIT constructs fresh hardware; `stop()` and any
+TeleOp is a `NextFTCOpMode`. Each INIT constructs fresh hardware; `onStop()` and any
 loop failure run the same `SafeHardware` shutdown. `RobotHardware` is the single
 bulk-cache owner and restores each hub's cache mode on exit.
-Pedro's [v3.0.1 Follower implementation](https://github.com/Pedro-Pathing/PedroPathing/blob/v3.0.1/core/src/main/java/com/pedropathing/follower/Follower.java)
+Pedro's [v3.0.2 Follower implementation](https://github.com/Pedro-Pathing/PedroPathing/blob/v3.0.2/core/src/main/java/com/pedropathing/follower/Follower.java)
 confirms why shutdown stops drivetrain outputs directly instead of calling update.

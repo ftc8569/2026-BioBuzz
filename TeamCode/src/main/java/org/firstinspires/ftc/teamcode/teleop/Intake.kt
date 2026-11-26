@@ -1,5 +1,6 @@
 package org.firstinspires.ftc.teamcode.teleop
 
+import dev.nextftc.bindings.button
 import org.firstinspires.ftc.teamcode.subsystems.ShooterSubsystem
 import kotlin.math.abs
 import org.firstinspires.ftc.teamcode.subsystems.ShooterController.ControlMode
@@ -47,25 +48,13 @@ class IntakeFeed(private val feedPower: Double, private val nanoTime: () -> Long
     companion object { const val BLOCKER_OPEN_DELAY_NANOS = 200_000_000L }
 }
 
-/** One event per press; releasing arms the next event. */
-internal class PressEdge {
-    private var previous = false
-    fun pressed(down: Boolean): Boolean {
-        val rising = down && !previous
-        previous = down
-        return rising
-    }
-}
-
 /** Default-on collection assist: driving above half power runs the intake at 0.45. */
 internal class DriveIntakeControls {
     var enabled = true
         private set
-    private val button = PressEdge()
 
-    fun update(button: Boolean) {
-        if (this.button.pressed(button)) enabled = !enabled
-    }
+    /** NextFTC binding: each press toggles the assist. */
+    fun bind(pressed: () -> Boolean) { button { pressed() } whenBecomesTrue { enabled = !enabled } }
 
     fun minimumPower(drivePower: Double): Double =
         if (enabled && abs(drivePower) > 0.5) 0.45 else 0.0

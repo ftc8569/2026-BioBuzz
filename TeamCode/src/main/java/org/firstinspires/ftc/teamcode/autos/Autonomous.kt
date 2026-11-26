@@ -3,15 +3,14 @@ package org.firstinspires.ftc.teamcode.autos
 import com.pedropathing.api.Paths
 import com.pedropathing.api.PoseFactory
 import com.pedropathing.follower.Follower
-import com.pedropathing.ivy.Command
-import com.pedropathing.ivy.CommandBuilder
-import com.pedropathing.ivy.behaviors.EndCondition
-import com.pedropathing.ivy.groups.Groups.sequential
 import com.pedropathing.math.Pose
 import com.pedropathing.paths.Path
 import com.qualcomm.hardware.lynx.LynxModule
 import com.qualcomm.robotcore.eventloop.opmode.Autonomous
-import com.qualcomm.robotcore.eventloop.opmode.OpMode
+import dev.nextftc.core.commands.Command
+import dev.nextftc.core.commands.groups.SequentialGroup
+import dev.nextftc.core.commands.utility.LambdaCommand
+import dev.nextftc.ftc.NextFTCOpMode
 import com.qualcomm.robotcore.util.RobotLog
 import java.util.function.LongSupplier
 import org.firstinspires.ftc.teamcode.pedro.Constants
@@ -24,7 +23,7 @@ import org.firstinspires.ftc.teamcode.teleop.IntakeFeed
 import org.firstinspires.ftc.teamcode.subsystems.IntakeSubsystem
 import org.firstinspires.ftc.teamcode.subsystems.ShooterSubsystem
 
-/** Original match autos and the shared lifecycle. Additional branch routes use this same base. */
+/** Original match autos and the shared NextFTC lifecycle. Additional routes use this same base. */
 
 /** Routes are authored for red; blue rotates them 180 degrees about the field center. */
 internal fun alliancePose(blue: Boolean, x: Double, y: Double, heading: Double): Pose =
@@ -61,7 +60,7 @@ open class BioBuzzAuto(clock: LongSupplier = LongSupplier(System::nanoTime)) : A
         operation = "LOOP Pedro / Pinpoint"
         follower.update()
         if (driving) {
-            if (!follower.isBusy) stop()
+            if (!follower.isBusy) finish()
             return
         }
         operation = "LOOP shooter / feed"
@@ -128,35 +127,37 @@ open class BioBuzzRed1_5(private val blue: Boolean = false) : AutoOpMode() {
     }
 
     override fun startRoutine() {
-        routine = sequential(
+        // NextFTC SequentialGroup, driven directly by updateRoutine() (not CommandManager), so a
+        // command failure stays inside AutoOpMode's guarded shutdown. Retained before start()
+        // so a failed START can still stop it.
+        routine = SequentialGroup(
             ShootCommand(follower, shooter, intake), followPath(path1, 1.0),
             followPath(path2, 0.0), ShootCommand(follower, shooter, intake), followPath(path3, 0.0)
         )
-        // The NextFTC frame command owns this group; retain it before starting for failed-START cleanup.
         checkNotNull(routine).start()
     }
 
     /** Intake collection lasts only as long as its path; cancellation stops it too. */
-    private fun followPath(path: Path, intakePower: Double): Command = CommandBuilder()
-        .requiring(follower, intake)
+    private fun followPath(path: Path, intakePower: Double): Command = LambdaCommand("FollowPath")
+        .requires(follower, intake)
         .setStart { intake.setPower(intakePower); follower.follow(path) }
-        .setDone { !follower.following() }
-        .setEnd {
+        .setIsDone { !follower.following() }
+        .setStop { interrupted ->
             intake.setPower(0.0)
-            if (it != EndCondition.NATURALLY) follower.stop()
+            if (interrupted) follower.stop()
         }
 
     override fun updateRoutine() {
         operation = "LOOP routine"
-        routine?.execute()
+        routine?.update()
         operation = "LOOP Pedro / Pinpoint"
         follower.update()
         // Once the whole sequence finishes, release outputs and stop background polling.
         routine?.let {
-            if (it.done()) {
+            if (it.isDone) {
                 routine = null
-                it.end(EndCondition.NATURALLY)
-                stop()
+                it.stop(false)
+                finish()
             }
         }
     }
@@ -170,7 +171,7 @@ open class BioBuzzRed1_5(private val blue: Boolean = false) : AutoOpMode() {
     override fun stopRoutine() {
         val command = routine
         routine = null
-        command?.end(EndCondition.INTERRUPTED)
+        command?.stop(true)
     }
 }
 
@@ -211,59 +212,67 @@ open class BioBuzzBackupAuto(
 
 // region Shared shooting command and guarded lifecycle
 
-/** Hold position and perform right-bumper shooting, finishing after one second of transfer. */
+/** NextFTC command: hold position and shoot, finishing after one second of transfer. */
 class ShootCommand(
-    follower: Follower,
-    shooter: ShooterSubsystem,
-    intake: IntakeSubsystem,
-    power: Double = ShooterController.DEFAULT_SHOOTER_PRESET,
-    nanoTime: () -> Long = System::nanoTime
-) : CommandBuilder() {
+    private val follower: Follower,
+    private val shooter: ShooterSubsystem,
+    private val intake: IntakeSubsystem,
+    private val power: Double = ShooterController.DEFAULT_SHOOTER_PRESET,
+    private val nanoTime: () -> Long = System::nanoTime
+) : Command() {
+    private var finished = false
+    private var transferStarted: Long? = null
+    private val feed = IntakeFeed(feedPower = 1.0, nanoTime) // main: ShootCommand feeds at full power.
+    override val isDone: Boolean get() = finished
+
     init {
         require(power.isFinite() && power > 0.0 && power <= 1.0)
-        var finished = false
-        var transferStarted: Long? = null
-        val feed = IntakeFeed(feedPower = 1.0, nanoTime) // main: ShootCommand feeds at full power.
-        fun stopAll() {
-            var failure = SafeHardware.attempt(null) { intake.forceStop() }
-            failure = SafeHardware.attempt(failure) { shooter.forceStop() }
-            failure = SafeHardware.attempt(failure) { follower.stop() }
-            SafeHardware.rethrow(failure)
-        }
-        requiring(follower, shooter, intake)
-        setStart {
-            finished = false
+        requires(follower, shooter, intake)
+    }
+
+    override fun start() {
+        finished = false
+        transferStarted = null
+        feed.reset()
+        stopAll()
+        shooter.startBlockerControl()
+        shooter.setControlMode(ControlMode.VELOCITY_LQR)
+        follower.hold(follower.pose())
+    }
+
+    override fun update() {
+        if (finished) return
+        shooter.updateShot(power, ControlMode.VELOCITY_LQR)
+        val transferPower = feed.power(shooter, power)
+        val now = nanoTime()
+        if (transferPower > 0.0) {
+            val start = transferStarted ?: now.also { transferStarted = it }
+            finished = now - start >= 1_000_000_000L
+        } else {
+            // A readiness interruption must not count as running the transfer.
             transferStarted = null
-            feed.reset()
-            stopAll()
-            shooter.startBlockerControl()
-            shooter.setControlMode(ControlMode.VELOCITY_LQR)
-            follower.hold(follower.pose())
         }
-        setExecute {
-            if (!finished) {
-                shooter.updateShot(power, ControlMode.VELOCITY_LQR)
-                val transferPower = feed.power(shooter, power)
-                val now = nanoTime()
-                if (transferPower > 0.0) {
-                    val start = transferStarted ?: now.also { transferStarted = it }
-                    finished = now - start >= 1_000_000_000L
-                } else {
-                    // A readiness interruption must not count as running the transfer.
-                    transferStarted = null
-                }
-                if (finished) stopAll() else intake.setPower(transferPower)
-            }
-        }
-        setDone { finished }
-        setEnd { stopAll() }
+        if (finished) stopAll() else intake.setPower(transferPower)
+    }
+
+    override fun stop(interrupted: Boolean) = stopAll()
+
+    private fun stopAll() {
+        var failure = SafeHardware.attempt(null) { intake.forceStop() }
+        failure = SafeHardware.attempt(failure) { shooter.forceStop() }
+        failure = SafeHardware.attempt(failure) { follower.stop() }
+        SafeHardware.rethrow(failure)
     }
 }
 
-/** READY is required before motion; every exit attempts every acquired output independently. */
+/**
+ * NextFTC auto base. READY is required before motion; every exit attempts every acquired
+ * output independently. Each lifecycle hook is guarded here because NextFTC skips onStop
+ * after an exception. Routines call [finish] to end early; the OpMode then idles until STOP.
+ */
 abstract class AutoOpMode protected constructor(
     protected val nanoTime: LongSupplier = LongSupplier(System::nanoTime)
-) : OpMode() {
+) : NextFTCOpMode() {
     private enum class State { UNINITIALIZED, READY, RUNNING, DONE, FAILED }
     private var state = State.UNINITIALIZED
     private var failureMessage: String? = null
@@ -285,7 +294,7 @@ abstract class AutoOpMode protected constructor(
     protected open fun stopRoutine() {}
     protected open fun runningStage() = "RUNNING"
 
-    final override fun init() = guarded {
+    final override fun onInit() = guarded {
         // The blocker servo is untouched until START, as on main.
         operation = "INIT motor setup"
         safety.prepareMotors(hardwareMap, usesShooter())
@@ -312,7 +321,9 @@ abstract class AutoOpMode protected constructor(
         state = State.READY
     }
 
-    final override fun init_loop() {
+    final override fun onWaitForStart() {
+        // LinearOpMode spins in INIT, so refresh at the telemetry interval only.
+        if (!telemetryRefresh.isDue()) return
         if (failure != null) { showFailure(); return }
         guarded {
             operation = "INIT telemetry"
@@ -323,7 +334,7 @@ abstract class AutoOpMode protected constructor(
         }
     }
 
-    final override fun start() {
+    final override fun onStartButtonPressed() {
         if (failure != null) { showFailure(); return }
         guarded {
             operation = "START"
@@ -339,7 +350,7 @@ abstract class AutoOpMode protected constructor(
         }
     }
 
-    final override fun loop() {
+    final override fun onUpdate() {
         if (failure != null) { if (telemetryRefresh.isDue()) showFailure(); return }
         if (state != State.RUNNING) return
         guarded {
@@ -361,7 +372,10 @@ abstract class AutoOpMode protected constructor(
         telemetry.addData("Pose (in / deg)", "%.1f, %.1f, %.0f", pose.x(), pose.y(), Math.toDegrees(pose.heading()))
     }
 
-    final override fun stop() {
+    final override fun onStop() = finish()
+
+    /** End the routine: stop every output and the voltage thread. Safe to call more than once. */
+    protected fun finish() {
         state = if (failure == null) State.DONE else State.FAILED
         shutdown(failure)?.let { recordFailure(it, "STOP") }
     }

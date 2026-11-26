@@ -9,6 +9,11 @@ import com.pedropathing.math.Pose
 import com.pedropathing.revhub.localizers.PinpointLocalizer
 import com.qualcomm.hardware.lynx.LynxModule
 import com.qualcomm.robotcore.eventloop.opmode.OpMode
+import dev.nextftc.bindings.BindingManager
+import dev.nextftc.bindings.button
+import dev.nextftc.core.components.BindingsComponent
+import dev.nextftc.core.components.Component
+import dev.nextftc.ftc.NextFTCOpMode
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp
 import com.qualcomm.robotcore.hardware.*
 import kotlin.math.abs
@@ -19,7 +24,9 @@ import kotlin.math.sign
 import org.firstinspires.ftc.teamcode.pedro.Constants
 
 /**
- * Match TeleOp. Each loop: copy gamepads → read sensors once → compute → write changed outputs.
+ * Match TeleOp on NextFTC. Each loop: [GamepadSnapshot] copies both gamepads, NextFTC's
+ * BindingsComponent runs button edges, then onUpdate reads sensors once → computes → writes
+ * changed outputs → publishes telemetry.
  *
  * G1: left stick drives; right stick turns; RB shoots with LQR; Y shoots manually;
  * LB reverses the flywheels; triggers run/reverse intake; A stops intake;
@@ -33,29 +40,32 @@ import org.firstinspires.ftc.teamcode.pedro.Constants
  * The blocker servo is not moved during INIT (as on main); it closes when START is pressed.
  */
 @TeleOp(name = "BioBuzz NextFTC Kotlin TeleOp") // Driver Station name kept from main.
-class Robot : OpMode() {
+class Robot : NextFTCOpMode() {
+    private val pads = GamepadSnapshot(this)
     private var hardware: RobotHardware? = null
     private var driver: DriverRobot? = null
 
-    override fun init() {
+    init { addComponents(pads, BindingsComponent) }
+
+    override fun onInit() = stopOnFailure {
         val devices = RobotHardware(hardwareMap).also { hardware = it }
-        driver = DriverRobot(devices, RobotTelemetry(telemetry, PanelsTelemetry.ftcTelemetry))
+        driver = DriverRobot(devices, RobotTelemetry(telemetry, PanelsTelemetry.ftcTelemetry), pads.g1, pads.g2)
     }
 
-    override fun start() = stopOnFailure { checkNotNull(driver).start() }
-    override fun loop() = stopOnFailure { checkNotNull(driver).update(gamepad1, gamepad2) }
+    override fun onStartButtonPressed() = stopOnFailure { checkNotNull(driver).start() }
+    override fun onUpdate() = stopOnFailure { checkNotNull(driver).update() }
 
-    override fun stop() {
+    override fun onStop() {
         val devices = hardware
         hardware = null
         driver = null
         devices?.close()
     }
 
-    /** Stop every device before the SDK reports the failure; keep cleanup errors attached. */
+    /** NextFTC skips onStop after an exception, so stop every device here before rethrowing. */
     private inline fun stopOnFailure(action: () -> Unit) {
         try { action() } catch (failure: Throwable) {
-            try { stop() } catch (cleanup: Throwable) {
+            try { onStop() } catch (cleanup: Throwable) {
                 if (cleanup !== failure) failure.addSuppressed(cleanup)
             }
             throw failure
@@ -67,19 +77,19 @@ class Robot : OpMode() {
 internal class DriverRobot(
     private val hardware: RobotHardware,
     val telemetry: RobotTelemetry,
+    private val g1: Gamepad,
+    private val g2: Gamepad,
     nanoTime: () -> Long = System::nanoTime
 ) {
     private val drive = hardware.drive
     private val shooter = hardware.shooter
     private val hold = hardware.hold
     private val location: Pose get() = hardware.pose
-    private val g1 = Gamepad()
-    private val g2 = Gamepad()
-    private val saveButton = PressEdge()
-    private val aimButton = PressEdge()
-    private val loggingButton = PressEdge()
-    private val approachButton = PressEdge()
-    private val pollenButton = PressEdge()
+    // Set by NextFTC button bindings, consumed once by the next updateDrive().
+    private var savePressed = false
+    private var aimPressed = false
+    private var approachPressed = false
+    private var pollenPressed = false
     private val pollen = PollenMacro()
     private val navigation = hardware.location
     private var hiveAlliance = RobotLocationSubsystem.Alliance.BLUE
@@ -99,20 +109,21 @@ internal class DriverRobot(
     private val down: Boolean get() = g1.dpad_down || g2.dpad_down
     private val manualBlocker: Boolean get() = g1.b || g2.b
 
+    /** Bindings are registered at START, so buttons pressed during INIT do nothing (as before). */
     fun start() {
         loopTiming.reset()
         telemetry.reset()
         hardware.start()
+        button { g1.right_stick_button } whenBecomesTrue { detailedLogging = !detailedLogging; telemetry.clear() }
+        button { g1.x } whenBecomesTrue { savePressed = true }
+        button { g2.y } whenBecomesTrue { aimPressed = true }
+        button { g2.x } whenBecomesTrue { approachPressed = true }
+        button { g2.a } whenBecomesTrue { pollenPressed = true }
+        driveIntakeControls.bind { g1.left_stick_button }
+        shooterControls.bind({ g1.y }, { up }, { down })
     }
 
-    fun update(gamepad1: Gamepad, gamepad2: Gamepad) {
-        // The SDK updates gamepads asynchronously; one copy keeps this loop consistent.
-        g1.copy(gamepad1)
-        g2.copy(gamepad2)
-        if (loggingButton.pressed(g1.right_stick_button)) {
-            detailedLogging = !detailedLogging
-            telemetry.clear()
-        }
+    fun update() {
         hardware.read()
         updateDrive()
         updateMechanisms()
@@ -129,27 +140,27 @@ internal class DriverRobot(
             targetHeading = null
             pollen.cancel()
         }
-        if (saveButton.pressed(g1.x)) {
+        if (savePressed.also { savePressed = false }) {
             pollen.cancel()
             navigation.saveHive(hiveAlliance)
             targetHeading = null
             aiming = false
         }
-        if (aimButton.pressed(g2.y)) {
+        if (aimPressed.also { aimPressed = false }) {
             pollen.cancel()
             targetHeading = navigation.headingToHive(hiveAlliance)
             aiming = targetHeading != null
         }
-        val approachPressed = approachButton.pressed(g2.x)
-        val pollenPressed = pollenButton.pressed(g2.a)
+        val approach = approachPressed.also { approachPressed = false }
+        val pollenToggle = pollenPressed.also { pollenPressed = false }
         val manualDrive = abs(g1.left_stick_x) > 0.05 || abs(g1.left_stick_y) > 0.05 ||
             abs(g1.right_stick_x) > 0.05
         val cancelAssist = manualDrive || g1.right_bumper || g1.y || g1.left_bumper || g1.a
         if (cancelAssist) pollen.cancel()
-        else if (pollenPressed) {
+        else if (pollenToggle) {
             aiming = false
             if (pollen.active) pollen.cancel() else pollen.start(location)
-        } else if (approachPressed) savedHive?.let { aiming = false; pollen.approach(it) }
+        } else if (approach) savedHive?.let { aiming = false; pollen.approach(it) }
         val turn = aimedTurn(g1.right_stick_x.toDouble())
         val shooting = (g1.right_bumper || g1.y) && !g1.left_bumper
         if (shooting && !hold.active) aiming = false
@@ -172,8 +183,6 @@ internal class DriverRobot(
     }
 
     private fun updateMechanisms() {
-        driveIntakeControls.update(g1.left_stick_button)
-        shooterControls.update(g1.y, up, down)
         shooterPower = shooterControls.requestedPower(g1.left_bumper, g1.right_bumper)
         shooter.setControlMode(shooterControls.mode)
         if (shooterPower > 0.0) shooter.updateShot(shooterPower, shooterControls.mode)
@@ -279,6 +288,20 @@ internal class RobotHardware(map: HardwareMap, nanoTime: () -> Long = System::na
     }
 
     override fun close() { safety.stop(null)?.let { throw it } }
+}
+
+/**
+ * NextFTC component: copies both gamepads once per loop (the SDK updates them on another
+ * thread) before BindingsComponent runs, so bindings and onUpdate see the same snapshot.
+ * Add it before BindingsComponent. Also clears buttons left registered by earlier OpModes.
+ */
+internal class GamepadSnapshot(private val opMode: OpMode) : Component {
+    val g1 = Gamepad()
+    val g2 = Gamepad()
+    override fun preInit() = BindingManager.fullReset()
+    override fun preWaitForStart() = copy()
+    override fun preUpdate() = copy()
+    private fun copy() { g1.copy(opMode.gamepad1); g2.copy(opMode.gamepad2) }
 }
 
 /** Retain devices before setup writes, so even failed constructors can stop them. */
