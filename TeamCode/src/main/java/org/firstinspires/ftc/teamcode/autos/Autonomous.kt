@@ -83,7 +83,7 @@ open class BioBuzzAuto(clock: LongSupplier = LongSupplier(System::nanoTime)) : A
 
     override fun reportTelemetry() {
         telemetry.addData("Shooter target RPM", shooter.control.targetRpm)
-        telemetry.addData("RPM 1 / 2", "%.0f / %.0f", shooter.wheels[0].rpm, shooter.wheels[1].rpm)
+        telemetry.addData("RPM 1 / 2", "%.0f / %.0f", shooter.rpm[0], shooter.rpm[1])
         telemetry.addData("Feed latched", shooter.control.feedReady)
         super.reportTelemetry()
     }

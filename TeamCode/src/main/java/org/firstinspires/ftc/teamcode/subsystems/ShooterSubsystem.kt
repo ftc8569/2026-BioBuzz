@@ -9,44 +9,44 @@ import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
 import java.util.concurrent.TimeUnit
 import kotlin.math.abs
-import kotlin.math.expm1
-import kotlin.math.hypot
+import kotlin.math.exp
+import kotlin.math.sqrt
 import org.firstinspires.ftc.robotcore.external.navigation.Rotation
 import org.firstinspires.ftc.teamcode.subsystems.ShooterController.ControlMode
 import org.firstinspires.ftc.teamcode.teleop.LoopTiming
 import org.firstinspires.ftc.teamcode.teleop.outputWrites
 
-// Owns the flywheels, blocker, LQR model and battery sampling for TeleOp and autos.
-
-/** Owns two flywheels and their blocker; shot decisions live in the shared controller. */
+/**
+ * Two flywheels and the blocker. TeleOp uses phased I/O (beginFrame → update → commitOutputs
+ * once per loop); autos use immediate I/O, where each call reads and writes on its own.
+ * The blocker is never written before [startBlockerControl] (START), as on main.
+ */
 class ShooterSubsystem(hardwareMap: HardwareMap, nanoTime: () -> Long = System::nanoTime) {
     val control = ShooterController(nanoTime)
-    private val motors = listOf("shooter1", "shooter2")
-        .map { hardwareMap.get(DcMotorEx::class.java, it) }
+    private val motors = listOf("shooter1", "shooter2").map { hardwareMap.get(DcMotorEx::class.java, it) }
     private val blocker = hardwareMap.get(Servo::class.java, "blocker")
-    val wheels = motors.map { FlywheelFeedback(it.motorType.ticksPerRev) }
-    internal val batteryVoltage =
-        BatteryVoltageMonitor(hardwareMap.getAll(VoltageSensor::class.java), nanoTime)
+    private val ticksPerRev = motors.map { it.motorType.ticksPerRev }
+    /** Latest sampled RPM of each flywheel (NaN if the motor type has no valid ticks/rev). */
+    val rpm = DoubleArray(2)
+    private val battery = BatteryVoltage(hardwareMap.getAll(VoltageSensor::class.java))
     private var phasedIo = false
-    /** main: the blocker servo is never written during INIT; START enables it (closed). */
     private var blockerStarted = false
     private var frameVoltage = 12.0
     private val committed = DoubleArray(3) { Double.NaN }
-    val flywheelPower: Double
-        get() = (control.normalizedPower * (12.0 / frameVoltage)).coerceIn(-1.0, 1.0)
+    /** Motor power after scaling the requested 12 V-normalized power by battery voltage. */
+    val flywheelPower: Double get() = (control.normalizedPower * 12.0 / frameVoltage).coerceIn(-1.0, 1.0)
 
     init {
         motors.forEachIndexed { i, motor ->
-            motor.direction = if (i == 0) DcMotorSimple.Direction.FORWARD
-                else DcMotorSimple.Direction.REVERSE
+            motor.direction = if (i == 0) DcMotorSimple.Direction.FORWARD else DcMotorSimple.Direction.REVERSE
             motor.zeroPowerBehavior = DcMotor.ZeroPowerBehavior.FLOAT
             motor.mode = DcMotor.RunMode.RUN_WITHOUT_ENCODER
         }
         forceStop()
     }
 
-    fun startVoltagePolling() = batteryVoltage.start()
-    fun stopVoltagePolling() = batteryVoltage.close()
+    fun startVoltagePolling() = battery.start()
+    fun stopVoltagePolling() = battery.close()
     internal fun enablePhasedIo() { phasedIo = true; forceStop() }
 
     fun startBlockerControl() {
@@ -57,17 +57,16 @@ class ShooterSubsystem(hardwareMap: HardwareMap, nanoTime: () -> Long = System::
     }
 
     internal fun beginFrame() {
-        frameVoltage = batteryVoltage.voltage
-        // Velocity only: position was never used, and each getter is a cached bulk-data lookup.
-        for (i in motors.indices) wheels[i].sample(motors[i].velocity)
+        frameVoltage = battery.voltage
+        for (i in 0..1) rpm[i] = if (ticksPerRev[i] > 0.0) abs(motors[i].velocity) * 60.0 / ticksPerRev[i] else Double.NaN
     }
 
+    /** Writes only changed outputs; [force] (shutdown) attempts every output even after a failure. */
     internal fun commitOutputs(force: Boolean = false) {
-        // Forced shutdown attempts every output, even if a motor or servo write fails.
-        batteryVoltage.active = control.normalizedPower != 0.0
+        battery.active = control.normalizedPower != 0.0
         outputWrites(force, 3) { i ->
-            val value = if (i < 2) flywheelPower else control.blockerPosition
             if (i == 2 && !blockerStarted) return@outputWrites
+            val value = if (i < 2) flywheelPower else control.blockerPosition
             if (force || value != committed[i]) {
                 if (i < 2) motors[i].power = value else blocker.position = value
                 committed[i] = value
@@ -75,45 +74,27 @@ class ShooterSubsystem(hardwareMap: HardwareMap, nanoTime: () -> Long = System::
         }
     }
 
-    fun forceStop() {
-        control.stop()
-        commitOutputs(force = true)
-    }
+    fun forceStop() { control.stop(); commitOutputs(force = true) }
 
     fun updateShot(power: Double, mode: ControlMode): Boolean {
         if (!phasedIo) beginFrame()
-        val ready = control.updateShot(power, mode, wheels[0].rpm)
-        flushImmediate()
-        return ready
+        return control.updateShot(power, mode, rpm[0]).also { flush() }
     }
 
     fun setFlywheelPower(power: Double) {
-        // Stopping needs no RPM read. Send zero even if an encoder has become unavailable.
+        // Stopping needs no RPM read, so zero is sent even if an encoder is unavailable.
         if (!phasedIo && power.isFinite() && power != 0.0) beginFrame()
         control.setFlywheelPower(power)
-        flushImmediate()
+        flush()
     }
 
-    fun setControlMode(mode: ControlMode) {
-        control.setControlMode(mode)
-        flushImmediate()
-    }
+    fun setControlMode(mode: ControlMode) { control.setControlMode(mode); flush() }
+    fun setManualBlockerOpen(open: Boolean) { control.setManualBlockerOpen(open); flush() }
 
-    fun setManualBlockerOpen(open: Boolean) {
-        control.setManualBlockerOpen(open)
-        flushImmediate()
-    }
-
-    private fun flushImmediate() {
-        if (!phasedIo) {
-            frameVoltage = batteryVoltage.voltage
-            commitOutputs()
-        }
-    }
-
+    private fun flush() { if (!phasedIo) { frameVoltage = battery.voltage; commitOutputs() } }
 }
 
-/** Shot decisions use sampled RPM; this controller never accesses hardware. */
+/** Shot decisions from sampled RPM. Never touches hardware. */
 class ShooterController(private val nanoTime: () -> Long = System::nanoTime) {
     enum class ControlMode { MANUAL_POWER, VELOCITY_LQR }
     private enum class State { OFF, REVERSE, MANUAL, LQR, DISABLED }
@@ -122,23 +103,24 @@ class ShooterController(private val nanoTime: () -> Long = System::nanoTime) {
     private var spinupStarted: Long? = null
     private var manualBlockerOpen = false
     private val timing = LoopTiming(nanoTime)
-    private var model: FlywheelLqrConfig? = null
     var controlMode = ControlMode.VELOCITY_LQR
         private set
+    /** Requested power as a fraction of 12 V. */
     var normalizedPower = 0.0
         private set
     var targetRpm = 0.0
         private set
     var atSpeed = false
         private set
+    /** Latched once flywheel 1 is within 1 % (LQR) or after 3 s (manual); cleared on release. */
     var feedReady = false
         private set
-    private val manualOpenAllowed: Boolean
-        get() = manualBlockerOpen && controlMode == ControlMode.MANUAL_POWER
-    val blockerOpen: Boolean get() = manualOpenAllowed || feedReady
+    private val manualOpen get() = manualBlockerOpen && controlMode == ControlMode.MANUAL_POWER
+    val blockerOpen: Boolean get() = manualOpen || feedReady
     val blockerPosition: Double get() = if (blockerOpen) BLOCKER_OPEN else BLOCKER_CLOSED
+
     val blockerStatus: String get() = when {
-        manualOpenAllowed -> "Manual open"
+        manualOpen -> "Manual open"
         requestedPower > 0.0 -> feedReadiness
         manualBlockerOpen -> "Manual override disabled in LQR"
         else -> "Shooter off"
@@ -151,10 +133,8 @@ class ShooterController(private val nanoTime: () -> Long = System::nanoTime) {
         State.DISABLED -> "LQR disabled: invalid model, weights, or RPM feedback"
     }
     val feedReadiness: String get() = when (state) {
-        State.MANUAL -> if (feedReady) "Timed feed ready - speed unverified"
-            else "Timed spin-up: wait 3 seconds - speed unverified"
-        State.LQR -> if (feedReady) "Feeding latched: target speed reached"
-            else "Waiting for flywheel 1 RPM"
+        State.MANUAL -> if (feedReady) "Timed feed ready - speed unverified" else "Timed spin-up: wait 3 seconds - speed unverified"
+        State.LQR -> if (feedReady) "Feeding latched: target speed reached" else "Waiting for flywheel 1 RPM"
         State.DISABLED -> "LQR disabled - feeding blocked"
         else -> "Shooter off"
     }
@@ -168,6 +148,7 @@ class ShooterController(private val nanoTime: () -> Long = System::nanoTime) {
         controlMode = mode
     }
 
+    /** Zero or reverse only; forward shooting goes through [updateShot]. */
     fun setFlywheelPower(power: Double) {
         resetShot()
         normalizedPower = if (power.isFinite()) power.coerceIn(-1.0, 0.0) else 0.0
@@ -186,42 +167,30 @@ class ShooterController(private val nanoTime: () -> Long = System::nanoTime) {
             normalizedPower = clipped
             feedReady = now - start >= 3_000_000_000L
             state = State.MANUAL
-        } else {
-            updateVelocity(measuredRpm)
+            return atSpeed
         }
+        targetRpm = clipped * MAX_MOTOR_RPM
+        timing.update()
+        val dt = if (timing.intervalMs > 0.0) timing.intervalMs / 1000.0 else 0.020 // first update
+        val volts = FlywheelLqr.volts(measuredRpm, targetRpm, dt)
+        if (volts == null) {
+            resetShot(keepTarget = true)
+            normalizedPower = 0.0
+            state = State.DISABLED
+            return false
+        }
+        normalizedPower = volts.coerceAtLeast(0.0) / 12.0 // Never brake by reversing.
+        atSpeed = abs(measuredRpm - targetRpm) <= targetRpm * 0.01
+        feedReady = feedReady || atSpeed
+        state = State.LQR
         return atSpeed
     }
 
-    private fun updateVelocity(rpm: Double) {
-        targetRpm = requestedPower * MAX_MOTOR_RPM
-        val liveModel = ShooterLqrTuning.snapshot(model).also { model = it }
-        timing.update()
-        val dt = (timing.intervalMs / 1000.0).takeIf { it > 0.0 }
-            ?: ShooterLqrTuning.NOMINAL_PERIOD_SECONDS
-        val volts = FlywheelLqr.calculate(rpm, targetRpm, dt, liveModel)
-        if (volts == null) {
-            resetVelocity()
-            normalizedPower = 0.0
-            state = State.DISABLED
-            return
-        }
-        normalizedPower = volts.coerceAtLeast(0.0) / 12.0
-        atSpeed = targetRpm > 0.0 && abs(rpm - targetRpm) <= targetRpm * 0.01
-        feedReady = feedReady || atSpeed
-        state = State.LQR
-    }
-
-    private fun resetVelocity() {
+    private fun resetShot(keepTarget: Boolean = false) {
+        if (!keepTarget) { requestedPower = 0.0; spinupStarted = null; targetRpm = 0.0 }
         timing.reset()
         atSpeed = false
         feedReady = false
-    }
-
-    private fun resetShot() {
-        requestedPower = 0.0
-        spinupStarted = null
-        targetRpm = 0.0
-        resetVelocity()
     }
 
     companion object {
@@ -232,116 +201,73 @@ class ShooterController(private val nanoTime: () -> Long = System::nanoTime) {
     }
 }
 
-internal data class FlywheelLqrConfig(
-    val kV: Double, // V / RPM
-    val kA: Double, // V / (RPM/s)
-    val rpmTolerance: Double,
-    val voltageTolerance: Double
-) {
-    val valid = doubleArrayOf(kV, kA, rpmTolerance, voltageTolerance)
-        .all { it.isFinite() && it > 0.0 }
-}
-
-/** Single measured velocity state: dRPM/dt = -(kV/kA) RPM + volts/kA.
- * No hardware, observer, numerical matrix solver, or accumulated integral error.
+/**
+ * One-state velocity LQR. Model: dRPM/dt = -(kV/kA)·RPM + volts/kA, discretized over dt as
+ * RPM' = a·RPM + b·volts. Costs q = 1/rpmTolerance², r = 1/voltageTolerance². The scalar
+ * discrete Riccati equation b²p² + (r(1−a²) − qb²)p − qr = 0 has one positive root p, giving
+ * K = abp / (r + b²p). Output: volts = kV·target + K·(target − rpm). No integral term.
  */
 internal object FlywheelLqr {
-    /** Returns requested volts, or null when the model/sample cannot be used. */
-    fun calculate(rpm: Double, targetRpm: Double, dt: Double, config: FlywheelLqrConfig): Double? {
-        if (!rpm.isFinite() || rpm < 0.0 || !targetRpm.isFinite() || targetRpm < 0.0 ||
-            !dt.isFinite() || dt <= 0.0 || !config.valid) return null
-
-        // Exact zero-order-hold discretization. expm1 avoids cancellation at short dt.
-        val oneMinusA = -expm1(-config.kV / config.kA * dt)
-        val a = 1.0 - oneMinusA
-        val b = oneMinusA / config.kV
-        // Normalize Q/R by the configured RPM/voltage tolerances.
-        val bn = b * config.voltageTolerance / config.rpmTolerance
-        val b2 = bn * bn
-        if (!b2.isFinite() || b2 <= 0.0) return null
-        // Stabilizing positive root of the scalar discrete Riccati equation.
-        val c = 1.0 - a*a - b2
-        val discriminant = hypot(c, 2.0*bn)
-        val p = if (c >= 0.0) 2.0/(c+discriminant) else (discriminant-c)/(2.0*b2)
-        val gain = (bn*p*a/(1.0+b2*p)) * config.voltageTolerance/config.rpmTolerance
-        val volts = config.kV*targetRpm + gain*(targetRpm-rpm)
-        if (!p.isFinite() || p <= 0.0 || !gain.isFinite() || gain < 0.0 ||
-            !volts.isFinite()) return null
-        return volts
+    /** Requested volts, or null when the model or the RPM sample cannot be used. */
+    fun volts(rpm: Double, targetRpm: Double, dt: Double): Double? {
+        val kV = ShooterLqrTuning.kV
+        val kA = ShooterLqrTuning.kA
+        val rpmTol = ShooterLqrTuning.rpmTolerance
+        val voltTol = ShooterLqrTuning.voltageTolerance
+        if (!(rpm >= 0.0 && targetRpm >= 0.0 && dt > 0.0 && kV > 0.0 && kA > 0.0 &&
+                rpmTol > 0.0 && voltTol > 0.0) ||
+            !(rpm + targetRpm + dt + kV + kA + rpmTol + voltTol).isFinite()) return null
+        val a = exp(-kV / kA * dt)
+        val b = (1.0 - a) / kV
+        val q = 1.0 / (rpmTol * rpmTol)
+        val r = 1.0 / (voltTol * voltTol)
+        val b2 = b * b
+        val c = r * (1.0 - a * a) - q * b2
+        val root = sqrt(c * c + 4.0 * b2 * q * r)
+        // Same root, written two ways to avoid subtracting nearly equal numbers.
+        val p = if (c <= 0.0) (root - c) / (2.0 * b2) else 2.0 * q * r / (c + root)
+        val gain = a * b * p / (r + b2 * p)
+        val volts = kV * targetRpm + gain * (targetRpm - rpm)
+        return volts.takeIf { it.isFinite() && gain.isFinite() && gain >= 0.0 }
     }
 }
 
-/** Panels > Configurables > ShooterLqrTuning. Initial model is ESTIMATED, not characterized. */
+/** Panels > Configurables > ShooterLqrTuning. Initial model is ESTIMATED, not measured. */
 @Configurable
 @Pinned
 class ShooterLqrTuning {
     @Pinned
     companion object {
-        // Preserve the current voltage/RPM model; replace only with characterized values.
-        const val DEFAULT_KV = 0.00240
-        // Current first-order time constant kA/kV is 0.0625 s.
-        const val DEFAULT_KA = 0.00015
-        const val DEFAULT_RPM_TOLERANCE = 10.0
-        const val DEFAULT_VOLTAGE_TOLERANCE = 3.0
-        internal const val NOMINAL_PERIOD_SECONDS = 0.020
-
-        @JvmField @Volatile var kV = DEFAULT_KV
-        @JvmField @Volatile var kA = DEFAULT_KA
-        // These choose LQR cost weights, not the feed-readiness threshold (still 1%).
-        @JvmField @Volatile var rpmTolerance = DEFAULT_RPM_TOLERANCE
-        @JvmField @Volatile var voltageTolerance = DEFAULT_VOLTAGE_TOLERANCE
-
-        internal fun snapshot(previous: FlywheelLqrConfig? = null): FlywheelLqrConfig =
-            previous?.takeIf {
-                it.kV.compareTo(kV) == 0 && it.kA.compareTo(kA) == 0 &&
-                    it.rpmTolerance.compareTo(rpmTolerance) == 0 &&
-                    it.voltageTolerance.compareTo(voltageTolerance) == 0
-            } ?: FlywheelLqrConfig(kV, kA, rpmTolerance, voltageTolerance)
+        @JvmField @Volatile var kV = 0.00240 // V / RPM
+        @JvmField @Volatile var kA = 0.00015 // V / (RPM/s); time constant kA/kV = 0.0625 s
+        // LQR cost scales only; the feed-readiness band stays 1 %.
+        @JvmField @Volatile var rpmTolerance = 10.0
+        @JvmField @Volatile var voltageTolerance = 3.0
     }
 }
 
-/** Reuse the existing voltage worker; slow idle reads without delaying driver controls. */
-internal class BatteryVoltageMonitor(
-    private val sensors: List<VoltageSensor>,
-    private val nanoTime: () -> Long = System::nanoTime
-) : AutoCloseable {
+/** Background battery reads (4 Hz while the flywheels are powered, 1 Hz idle), off the loop. */
+internal class BatteryVoltage(private val sensors: List<VoltageSensor>) : AutoCloseable {
     @Volatile var voltage = 12.0
         private set
     @Volatile var active = false
-    private var lastPoll: Long? = null
+    private var idleTicks = 0
     private var executor: ScheduledExecutorService? = null
     private var closed = false
 
     @Synchronized fun start() {
         if (closed || executor != null || sensors.isEmpty()) return
-        executor = Executors.newSingleThreadScheduledExecutor { task ->
-            Thread(task, "BioBuzz battery voltage").apply { isDaemon = true }
-        }.also {
-            it.scheduleWithFixedDelay({ pollIfDue() }, 0, 250, TimeUnit.MILLISECONDS)
-        }
+        executor = Executors.newSingleThreadScheduledExecutor { Thread(it, "BioBuzz battery voltage").apply { isDaemon = true } }
+            .apply { scheduleWithFixedDelay(::poll, 0, 250, TimeUnit.MILLISECONDS) }
     }
 
-    internal fun pollIfDue() {
-        val now = nanoTime()
-        // Idle telemetry needs only 1 Hz; powered flywheels keep the original 4 Hz compensation.
-        // Check every 250 ms so pressing shoot does not wait for the slower idle interval.
-        val interval = if (active) 250_000_000L else 1_000_000_000L
-        if (lastPoll?.let { now - it < interval } == true) return
-        lastPoll = now
-        pollOnce()
-    }
-
-    internal fun pollOnce() {
+    private fun poll() {
+        if (!active && idleTicks++ % 4 != 0) return
         var minimum = Double.POSITIVE_INFINITY
         for (sensor in sensors) {
-            if (Thread.currentThread().isInterrupted) return
-            val sample = try {
-                sensor.voltage
-            } catch (_: RuntimeException) {
-                // A failed hub must not prevent future polls or reading the other hub.
-                continue
-            }
-            if (sample.isFinite() && sample > 0.0) minimum = minOf(minimum, sample)
+            // A failed hub must not stop future polls or the other hub's reading.
+            val v = try { sensor.voltage } catch (_: RuntimeException) { continue }
+            if (v.isFinite() && v > 0.0) minimum = minOf(minimum, v)
         }
         voltage = if (minimum.isFinite()) minimum else 12.0
     }
@@ -351,16 +277,6 @@ internal class BatteryVoltageMonitor(
         executor?.shutdownNow()
         executor = null
     }
-}
-
-/** Cached motor feedback and its configured conversion; telemetry performs no hardware reads. */
-class FlywheelFeedback(val ticksPerRev: Double) {
-    var ticksPerSecond = 0.0
-        private set
-    val valid = ticksPerRev.isFinite() && ticksPerRev > 0.0
-    val rpm: Double get() = if (valid) ticksPerSecond * 60.0 / ticksPerRev else Double.NaN
-
-    fun sample(velocity: Double) { ticksPerSecond = abs(velocity) }
 }
 
 /** Confirmed goBILDA 1:1 gearbox, rather than the SDK's 99.5:1 default. */

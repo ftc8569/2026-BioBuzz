@@ -4,7 +4,7 @@ import kotlin.math.roundToInt
 import org.firstinspires.ftc.teamcode.subsystems.ShooterController
 import org.firstinspires.ftc.teamcode.subsystems.ShooterController.ControlMode
 
-/** Shared match/tuner controls from manual-shooter: hold Y, release to return to LQR.
+/** Shared match/tuner controls: hold Y for manual power, release to return to LQR.
  * One D-pad press changes 0.005 (22.5 RPM in LQR); reverse always wins.
  */
 internal class ShooterControls {

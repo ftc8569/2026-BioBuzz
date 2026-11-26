@@ -90,7 +90,7 @@ internal fun RobotTelemetry.reportShooter(shooter: ShooterSubsystem, controls: S
     val target = controls.velocityTargetRpm
     if (target == null) addData("Target RPM", "Manual power")
     else addData("Target RPM", "%.0f", target)
-    addData("RPM 1 / 2", "%.0f / %.0f", shooter.wheels[0].rpm, shooter.wheels[1].rpm)
+    addData("RPM 1 / 2", "%.0f / %.0f", shooter.rpm[0], shooter.rpm[1])
     addData("Motor power", "%.2f", shooter.flywheelPower)
     addData("Feed", shot.feedReadiness)
 }
