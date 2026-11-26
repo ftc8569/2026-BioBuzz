@@ -1,6 +1,5 @@
 package org.firstinspires.ftc.teamcode.subsystems
 
-import dev.nextftc.robot.Mechanism
 import com.bylazar.configurables.annotations.Configurable
 import com.qualcomm.robotcore.hardware.*
 import com.qualcomm.robotcore.hardware.configuration.annotations.DeviceProperties
@@ -20,7 +19,7 @@ import org.firstinspires.ftc.teamcode.teleop.outputWrites
 // Owns the flywheels, blocker, LQR model and battery sampling for TeleOp and autos.
 
 /** Owns two flywheels and their blocker; shot decisions live in the shared controller. */
-class ShooterSubsystem(hardwareMap: HardwareMap, nanoTime: () -> Long = System::nanoTime) : Mechanism {
+class ShooterSubsystem(hardwareMap: HardwareMap, nanoTime: () -> Long = System::nanoTime) {
     val control = ShooterController(nanoTime)
     private val motors = listOf("shooter1", "shooter2")
         .map { hardwareMap.get(DcMotorEx::class.java, it) }
@@ -29,6 +28,8 @@ class ShooterSubsystem(hardwareMap: HardwareMap, nanoTime: () -> Long = System::
     internal val batteryVoltage =
         BatteryVoltageMonitor(hardwareMap.getAll(VoltageSensor::class.java), nanoTime)
     private var phasedIo = false
+    /** main: the blocker servo is never written during INIT; START enables it (closed). */
+    private var blockerStarted = false
     private var frameVoltage = 12.0
     private val committed = DoubleArray(3) { Double.NaN }
     val flywheelPower: Double
@@ -48,6 +49,13 @@ class ShooterSubsystem(hardwareMap: HardwareMap, nanoTime: () -> Long = System::
     fun stopVoltagePolling() = batteryVoltage.close()
     internal fun enablePhasedIo() { phasedIo = true; forceStop() }
 
+    fun startBlockerControl() {
+        if (blockerStarted) return
+        blockerStarted = true
+        control.setManualBlockerOpen(false)
+        commitOutputs()
+    }
+
     internal fun beginFrame() {
         frameVoltage = batteryVoltage.voltage
         // Velocity only: position was never used, and each getter is a cached bulk-data lookup.
@@ -59,6 +67,7 @@ class ShooterSubsystem(hardwareMap: HardwareMap, nanoTime: () -> Long = System::
         batteryVoltage.active = control.normalizedPower != 0.0
         outputWrites(force, 3) { i ->
             val value = if (i < 2) flywheelPower else control.blockerPosition
+            if (i == 2 && !blockerStarted) return@outputWrites
             if (force || value != committed[i]) {
                 if (i < 2) motors[i].power = value else blocker.position = value
                 committed[i] = value
@@ -128,6 +137,19 @@ class ShooterController(private val nanoTime: () -> Long = System::nanoTime) {
         get() = manualBlockerOpen && controlMode == ControlMode.MANUAL_POWER
     val blockerOpen: Boolean get() = manualOpenAllowed || feedReady
     val blockerPosition: Double get() = if (blockerOpen) BLOCKER_OPEN else BLOCKER_CLOSED
+    val blockerStatus: String get() = when {
+        manualOpenAllowed -> "Manual open"
+        requestedPower > 0.0 -> feedReadiness
+        manualBlockerOpen -> "Manual override disabled in LQR"
+        else -> "Shooter off"
+    }
+    val speedStatus: String get() = when (state) {
+        State.OFF -> "Off"
+        State.REVERSE -> "Reversing"
+        State.MANUAL -> "Voltage-normalized power"
+        State.LQR -> if (atSpeed) "LQR holding target RPM" else "LQR reaching target RPM"
+        State.DISABLED -> "LQR disabled: invalid model, weights, or RPM feedback"
+    }
     val feedReadiness: String get() = when (state) {
         State.MANUAL -> if (feedReady) "Timed feed ready - speed unverified"
             else "Timed spin-up: wait 3 seconds - speed unverified"

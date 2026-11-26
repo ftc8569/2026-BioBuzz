@@ -28,8 +28,8 @@ The default preset is **0.72**: **3240 RPM** in LQR, or a requested **8.64 V** i
 manual mode. For example, manual mode commands 0.72 power at 12 V and 0.864 at
 10 V, capped at 1.0. Manual operation does not regulate measured RPM. Automatic
 manual-mode feed readiness waits three seconds; a preset or mode change restarts
-that wait. Match intake still applies the 100 ms blocker-opening delay and
-0.6 feed power. G1 A retains its intake-stop priority.
+that wait. Match intake applies the 200 ms blocker-opening delay and
+full (1.0) feed power, as on main. G1 A retains its intake-stop priority.
 
 `Shooter Tuning` is a new diagnostic in `teleop/Telemetry.kt` that reuses the
 **same** `ShooterSubsystem`, `ShooterControls`, LQR implementation and telemetry.

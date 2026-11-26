@@ -2,7 +2,7 @@
   "startPoint": {
     "x": 57.01798561151079,
     "y": 9.221582733812928,
-    "headingDeg": 270,
+    "headingDeg": 90,
     "locked": false
   },
   "lines": [

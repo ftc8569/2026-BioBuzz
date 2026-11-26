@@ -3,14 +3,13 @@ package org.firstinspires.ftc.teamcode.autos
 import com.pedropathing.api.Paths
 import com.pedropathing.math.Pose
 import com.pedropathing.paths.Path
-import dev.nextftc.robot.opmode.NextAutonomous
-import org.firstinspires.ftc.teamcode.teleop.NextRoutineOpMode
+import com.qualcomm.robotcore.eventloop.opmode.Autonomous
 import com.qualcomm.robotcore.hardware.DcMotor
 import com.qualcomm.robotcore.hardware.DcMotorEx
 import com.qualcomm.robotcore.hardware.DcMotorSimple
 
 /** Routes from updates/preload-park-blocker-timing; shared LQR and two-second feed are unchanged. */
-class PreloadParkAuto(private val blue: Boolean, private val close: Boolean) : BioBuzzAuto() {
+open class PreloadParkAuto(private val blue: Boolean, private val close: Boolean) : BioBuzzAuto() {
     private fun pose(x: Double, y: Double, heading: Double) = alliancePose(blue, x, y, heading)
     override fun startingPose(): Pose = pose(58.4934, if (close) 6.6 else 9.0389, -90.0)
     override fun buildPath(start: Pose): Path {
@@ -21,6 +20,7 @@ class PreloadParkAuto(private val blue: Boolean, private val close: Boolean) : B
 }
 
 /** Quarter-second diagonal move. Needs only four drive motors, with the same guarded cleanup. */
+@Autonomous(name = "MoveForwardLeft")
 class MoveForwardLeft : AutoOpMode() {
     private var motors = emptyList<DcMotorEx>()
     private var started = 0L
@@ -46,18 +46,14 @@ class MoveForwardLeft : AutoOpMode() {
     }
 }
 
-// Keep the existing Driver Station names; NextFTC owns lifecycle and scheduling.
-@NextAutonomous(name = "RedPreloadParkClose")
-class RedPreloadParkCloseEntry : NextRoutineOpMode({ PreloadParkAuto(blue = false, close = true) })
+@Autonomous(name = "RedPreloadParkClose")
+class RedPreloadParkClose : PreloadParkAuto(blue = false, close = true)
 
-@NextAutonomous(name = "RedPreloadParkFar")
-class RedPreloadParkFarEntry : NextRoutineOpMode({ PreloadParkAuto(blue = false, close = false) })
+@Autonomous(name = "RedPreloadParkFar")
+class RedPreloadParkFar : PreloadParkAuto(blue = false, close = false)
 
-@NextAutonomous(name = "BluePreloadParkClose")
-class BluePreloadParkCloseEntry : NextRoutineOpMode({ PreloadParkAuto(blue = true, close = true) })
+@Autonomous(name = "BluePreloadParkClose")
+class BluePreloadParkClose : PreloadParkAuto(blue = true, close = true)
 
-@NextAutonomous(name = "BluePreloadParkFar")
-class BluePreloadParkFarEntry : NextRoutineOpMode({ PreloadParkAuto(blue = true, close = false) })
-
-@NextAutonomous(name = "MoveForwardLeft")
-class MoveForwardLeftEntry : NextRoutineOpMode({ MoveForwardLeft() })
+@Autonomous(name = "BluePreloadParkFar")
+class BluePreloadParkFar : PreloadParkAuto(blue = true, close = false)

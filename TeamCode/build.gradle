@@ -45,7 +45,6 @@ repositories {
 
 dependencies {
     implementation project(':FtcRobotController')
-    implementation 'dev.nextftc.v2:robot:0.3.0'
     implementation 'dev.frozenmilk.sinister:Sloth:0.3.2'
     // Panels with individual plugins so camera support remains disabled.
     implementation 'com.bylazar:panels:1.0.7'

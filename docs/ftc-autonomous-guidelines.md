@@ -6,26 +6,25 @@ translated against the installed library, rather than copied directly.
 
 ## Lifecycle and failure handling
 
-Every match auto enters through a `@NextAutonomous` entry and `NextRoutineOpMode`,
-then uses AutoOpMode to initialize its devices and route before becoming READY.
-Only the first active NextFTC scheduler frame invokes START; STOP during INIT
-never starts a routine. The collection auto owns an Ivy sequential group inside
-that frame, without a second call to the global scheduler.
+Every match auto is a plain SDK `@Autonomous` OpMode built on `AutoOpMode`, which
+initializes devices and the route before becoming READY. STOP during INIT never
+starts a routine. The collection auto runs its Ivy sequential group directly from
+`loop()`. The blocker servo is not moved until START (as on main).
 The original eight autos and the shared lifecycle live in `autos/Autonomous.kt`.
 `MainAutos.kt` adds eight imported sequence autos; `PreloadAutos.kt` adds four
 preload/park autos and a timed move, giving 21 entries.
 START only runs a routine after READY. Basic autos advance through the measured
-speed gate, shared 100 ms blocker delay, two-second feed, and path following
+speed gate, shared 200 ms blocker delay, two-second feed, and path following
 without blocking waits. The longer routine keeps its one-second feed per shot;
 backup routines drive without shooter initialization.
-Backup routines shut down after Pedro finishes following; the longer collection
-routine shuts down after its whole scheduled sequence completes. DONE loops do
-not poll hardware or apply powered position holding after parking.
+Backup routines keep updating Pedro after arriving, so the robot holds its park
+pose until the period ends (as on main). The longer collection routine shuts down
+after its whole sequence completes.
 A runtime or linkage failure enters FAILED, preserves the original stack trace,
 and displays the phase and exception as `Auto error`. FAILED cannot resume by
 pressing START. Fix the reported cause and reinitialize.
 
-Cleanup attempts each known motor independently, closes the blocker, stops the
+Cleanup attempts each known motor independently, closes the blocker (once START enabled it), stops the
 voltage worker, and restores each hub’s previous bulk-cache mode. It does not call
 `follower.update()` to stop: that also polls localization and can fail when the
 Pinpoint is the device that disconnected. Cleanup failures are attached to the
@@ -87,17 +86,15 @@ cleanup still need fake-hardware tests or on-robot validation.
 ## Shared intake and compact TeleOp
 
 `teleop/Intake.kt` contains `IntakeFeed`, used by Robot, the Basic autos and
-ShootCommand. It applies the same speed gate, 0.6 feed power and 100 ms opening
-delay. Basic feed timing begins when intake power actually starts, keeping two
+ShootCommand. It applies the same speed gate and a 200 ms opening delay. Feed power
+follows main: 1.0 in TeleOp and ShootCommand, the 0.72 shooter preset in the Basic,
+preload and MAIN autos. Basic feed timing begins when intake power actually starts, keeping two
 full seconds of transfer. The longer routine retains its one-second transfer.
 Manual reverse, stop, collection assist, and the manual-mode blocker override
 remain available in TeleOp. Collection path powers and route coordinates are unchanged.
 
-TeleOp uses [NextFTC's NextOpMode lifecycle](https://nextftc.dev/robot/nextopmode/).
-Its hardware-free robot container is discovered once; each INIT constructs fresh
-hardware and one coordinated default command. Cleanup uses `OpModeHook.afterEnd`,
-which the installed 0.3.0 runtime calls from `finally`, including loop failures.
-The shared cache owner remains responsible for refresh and restoration; adding
-NextFTC's `BulkReadHook` would duplicate that responsibility.
+TeleOp is a plain SDK `OpMode`. Each INIT constructs fresh hardware; `stop()` and any
+loop failure run the same `SafeHardware` shutdown. `RobotHardware` is the single
+bulk-cache owner and restores each hub's cache mode on exit.
 Pedro's [v3.0.1 Follower implementation](https://github.com/Pedro-Pathing/PedroPathing/blob/v3.0.1/core/src/main/java/com/pedropathing/follower/Follower.java)
 confirms why shutdown stops drivetrain outputs directly instead of calling update.

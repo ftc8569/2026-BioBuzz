@@ -1,6 +1,5 @@
 package org.firstinspires.ftc.teamcode.subsystems
 
-import dev.nextftc.robot.Mechanism
 import com.bylazar.configurables.annotations.Configurable
 import com.qualcomm.hardware.limelightvision.Limelight3A
 import com.qualcomm.hardware.limelightvision.LLResult
@@ -357,7 +356,7 @@ class LimelightHiveLocalizer(private val camera: Limelight3A) {
  * Raw botpose uses the camera's configured field map; hive estimates use our dynamic model.
  * No match OpMode enables a camera automatically.
  */
-class VisionSubsystem(private val camera: Limelight3A) : Mechanism, AutoCloseable {
+class VisionSubsystem(private val camera: Limelight3A) : AutoCloseable {
     constructor(map: HardwareMap, name: String = "limelight") :
         this(map.get(Limelight3A::class.java, name))
 

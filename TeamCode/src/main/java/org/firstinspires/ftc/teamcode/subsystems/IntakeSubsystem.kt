@@ -1,6 +1,5 @@
 package org.firstinspires.ftc.teamcode.subsystems
 
-import dev.nextftc.robot.Mechanism
 import com.qualcomm.robotcore.hardware.DcMotor
 import com.qualcomm.robotcore.hardware.DcMotorEx
 import com.qualcomm.robotcore.hardware.DcMotorSimple
@@ -8,7 +7,7 @@ import com.qualcomm.robotcore.hardware.HardwareMap
 import org.firstinspires.ftc.teamcode.teleop.outputWrites
 
 /** Owns both intake motors; feeding decisions are shared by TeleOp and autonomous. */
-class IntakeSubsystem(hardwareMap: HardwareMap) : Mechanism {
+class IntakeSubsystem(hardwareMap: HardwareMap) {
     private val motors = listOf("intake1", "intake2")
         .map { hardwareMap.get(DcMotorEx::class.java, it) }
     private var phasedIo = false

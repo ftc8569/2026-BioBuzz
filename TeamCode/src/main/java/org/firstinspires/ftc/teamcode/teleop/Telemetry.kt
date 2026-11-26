@@ -7,7 +7,7 @@ import com.bylazar.configurables.annotations.Configurable
 import org.firstinspires.ftc.teamcode.subsystems.VisionSubsystem
 import com.qualcomm.hardware.lynx.LynxModule
 import com.qualcomm.robotcore.eventloop.opmode.OpMode
-import dev.nextftc.robot.opmode.NextTeleop
+import com.qualcomm.robotcore.eventloop.opmode.TeleOp
 import com.qualcomm.robotcore.hardware.DcMotor
 import com.qualcomm.robotcore.hardware.DcMotorEx
 import com.qualcomm.robotcore.hardware.DcMotorSimple
@@ -91,13 +91,14 @@ internal fun RobotTelemetry.reportShooter(shooter: ShooterSubsystem, controls: S
 }
 
 /** Tests the blocker servo without running the shooter or intake. Remove game pieces first. */
+@TeleOp(name = "Blocker Diagnostic", group = "Test")
 class BlockerDiagnosticTeleOp : OpMode() {
     private lateinit var blocker: Servo
+    private var started = false
 
-    override fun init() {
-        blocker = hardwareMap.get(Servo::class.java, "blocker")
-        blocker.position = CLOSED
-    }
+    // main: no servo movement during INIT; START closes the blocker.
+    override fun init() { blocker = hardwareMap.get(Servo::class.java, "blocker") }
+    override fun start() { started = true; blocker.position = CLOSED }
 
     override fun loop() {
         when {
@@ -109,7 +110,8 @@ class BlockerDiagnosticTeleOp : OpMode() {
     }
 
     override fun stop() {
-        if (::blocker.isInitialized) blocker.position = CLOSED
+        if (started) blocker.position = CLOSED
+        started = false
     }
 
     companion object {
@@ -119,6 +121,7 @@ class BlockerDiagnosticTeleOp : OpMode() {
 }
 
 /** Direct motor test: no PID, intake, or automatic blocker movement. Clear the wheels first. */
+@TeleOp(name = "Shooter Motor Diagnostic", group = "Test")
 class ShooterMotorDiagnosticTeleOp : OpMode() {
     private lateinit var shooter1: DcMotorEx
     private lateinit var shooter2: DcMotorEx
@@ -126,12 +129,13 @@ class ShooterMotorDiagnosticTeleOp : OpMode() {
     private val safety = SafeHardware()
     private var initialPosition1 = 0
     private var initialPosition2 = 0
+    private var started = false
 
     override fun init() = guarded {
         val hubs = hardwareMap.getAll(LynxModule::class.java)
         safety.setCaching(hubs, LynxModule.BulkCachingMode.OFF)
         hubs.forEach { it.clearBulkCache() }
-        blocker = safety.closeBlocker(hardwareMap, ShooterController.BLOCKER_CLOSED)
+        blocker = hardwareMap.get(Servo::class.java, "blocker") // Untouched until START.
         shooter1 = safety.motor(hardwareMap, "shooter1")
         shooter2 = safety.motor(hardwareMap, "shooter2")
         // Reverse both motor polarities while preserving logical forward/reverse controls.
@@ -145,10 +149,16 @@ class ShooterMotorDiagnosticTeleOp : OpMode() {
         shooter2.power = 0.0
         initialPosition1 = shooter1.currentPosition
         initialPosition2 = shooter2.currentPosition
+    }
+
+    override fun start() = guarded {
+        started = true
+        safety.onStop { blocker.position = ShooterController.BLOCKER_CLOSED }
         blocker.position = ShooterController.BLOCKER_CLOSED
     }
 
     override fun loop() = guarded {
+        if (!started) return@guarded
         // Hold X or Y for one motor, B for both. Right trigger raises power to 0.80.
         val power = 0.25 + 0.55 * gamepad1.right_trigger.toDouble().coerceIn(0.0, 1.0)
         shooter1.power = if (gamepad1.x || gamepad1.b) power else 0.0
@@ -164,8 +174,16 @@ class ShooterMotorDiagnosticTeleOp : OpMode() {
         telemetry.addData("Encoder position ticks 1 / 2", "%d / %d", position1, position2)
         telemetry.addData("Ticks moved since init 1 / 2", "%d / %d",
             position1.toLong() - initialPosition1, position2.toLong() - initialPosition2)
-        telemetry.addData("Encoder ticks/rev 1 / 2", "%.0f / %.0f",
+        telemetry.addData("Motor 1 / 2 connection", "%s / %s",
+            shooter1.connectionInfo, shooter2.connectionInfo)
+        telemetry.addData("Motor 1 / 2 profile", "%s / %s",
+            shooter1.motorType.name, shooter2.motorType.name)
+        telemetry.addLine("Bulk cache OFF: fresh reads. Spinning + zero counts: check encoder cables/ports.")
+        telemetry.addData("Configured ticks/rev 1 / 2", "%.0f / %.0f",
             shooter1.motorType.ticksPerRev, shooter2.motorType.ticksPerRev)
+        telemetry.addData("Configured max ticks/s 1 / 2", "%.0f / %.0f",
+            shooter1.motorType.achieveableMaxTicksPerSecond,
+            shooter2.motorType.achieveableMaxTicksPerSecond)
         telemetry.update()
     }
 
@@ -180,6 +198,7 @@ class ShooterMotorDiagnosticTeleOp : OpMode() {
 
 /** Optional camera check. It starts only when this diagnostic is explicitly selected and started. */
 @Configurable
+@TeleOp(name = "Vision Diagnostic", group = "Test")
 class VisionDiagnosticTeleOp : OpMode() {
     private var vision: VisionSubsystem? = null
     private val refresh = TelemetryRefresh()
@@ -230,11 +249,9 @@ class VisionDiagnosticTeleOp : OpMode() {
 /** Uses the match shooter and controls for tuning; only flywheels and blocker are required.
  * INIT stays stopped. No intake, drive, odometry or camera is created by this OpMode.
  */
-class ShooterTuningTeleOp internal constructor(
-    private val nanoTime: () -> Long,
-    private val panels: () -> Telemetry
-) : OpMode() {
-    constructor() : this(System::nanoTime, { com.bylazar.telemetry.PanelsTelemetry.ftcTelemetry })
+@TeleOp(name = "Shooter Tuning", group = "Test")
+class ShooterTuningTeleOp : OpMode() {
+    private val nanoTime: () -> Long = System::nanoTime
     private val safety = SafeHardware()
     private val controls = ShooterControls()
     private val errorRefresh = TelemetryRefresh(nanoTime)
@@ -254,9 +271,7 @@ class ShooterTuningTeleOp internal constructor(
         safety.setCaching(hubs, LynxModule.BulkCachingMode.MANUAL)
         hubs.forEach { it.clearBulkCache() }
         // Acquire independent stop handles before the subsystem can partially initialize.
-        var error = SafeHardware.attempt(null) {
-            safety.closeBlocker(hardwareMap, ShooterController.BLOCKER_CLOSED)
-        }
+        var error: Throwable? = null
         for (name in listOf("shooter1", "shooter2")) error = SafeHardware.attempt(error) {
             safety.motor(hardwareMap, name).power = 0.0
         }
@@ -266,7 +281,7 @@ class ShooterTuningTeleOp internal constructor(
             safety.onStop { it.stopVoltagePolling() }
             it.enablePhasedIo()
         }
-        display = RobotTelemetry(telemetry, panels(), nanoTime)
+        display = RobotTelemetry(telemetry, com.bylazar.telemetry.PanelsTelemetry.ftcTelemetry, nanoTime)
         ready = true
         report()
     }
@@ -277,7 +292,7 @@ class ShooterTuningTeleOp internal constructor(
     }
     override fun start() = guarded("START") {
         if (!ready) return@guarded
-        checkNotNull(shooter).startVoltagePolling()
+        checkNotNull(shooter).apply { startBlockerControl(); startVoltagePolling() }
         started = true
     }
     override fun loop() = guarded("LOOP") {
@@ -324,17 +339,3 @@ class ShooterTuningTeleOp internal constructor(
         }
     }
 }
-
-
-// Driver Station entries all run through NextFTC.
-@NextTeleop(name = "Blocker Diagnostic", group = "Test")
-class BlockerDiagnosticTeleOpEntry : NextRoutineOpMode({ BlockerDiagnosticTeleOp() })
-
-@NextTeleop(name = "Shooter Motor Diagnostic", group = "Test")
-class ShooterMotorDiagnosticTeleOpEntry : NextRoutineOpMode({ ShooterMotorDiagnosticTeleOp() })
-
-@NextTeleop(name = "Vision Diagnostic", group = "Test")
-class VisionDiagnosticTeleOpEntry : NextRoutineOpMode({ VisionDiagnosticTeleOp() })
-
-@NextTeleop(name = "Shooter Tuning", group = "Test")
-class ShooterTuningTeleOpEntry : NextRoutineOpMode({ ShooterTuningTeleOp() })

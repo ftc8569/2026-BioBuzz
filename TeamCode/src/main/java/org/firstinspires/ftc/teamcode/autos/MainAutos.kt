@@ -3,8 +3,7 @@ package org.firstinspires.ftc.teamcode.autos
 import com.pedropathing.api.Paths
 import com.pedropathing.math.Pose
 import com.pedropathing.paths.Path
-import dev.nextftc.robot.opmode.NextAutonomous
-import org.firstinspires.ftc.teamcode.teleop.NextRoutineOpMode
+import com.qualcomm.robotcore.eventloop.opmode.Autonomous
 import java.util.function.LongSupplier
 import kotlin.math.atan2
 import kotlin.math.cos
@@ -15,11 +14,12 @@ import org.firstinspires.ftc.teamcode.subsystems.ShooterController
 import org.firstinspires.ftc.teamcode.subsystems.ShooterController.ControlMode
 
 /** The ri5w-autos FIFO route runner, using the current controller and guarded hardware lifecycle. */
-class BioBuzzMainAuto(
+open class BioBuzzMainAuto(
     private val route: MainRoutine, private val blue: Boolean,
     clock: LongSupplier = LongSupplier(System::nanoTime)
 ) : AutoOpMode(clock) {
-    private val feed = IntakeFeed(clock::getAsLong)
+    // ri5w-autos: MAIN routes feed at the shooter preset.
+    private val feed = IntakeFeed(ShooterController.DEFAULT_SHOOTER_PRESET, clock::getAsLong)
     private var index = -1
     private var started = 0L
     private var entered = 0L
@@ -252,27 +252,26 @@ object MainRoutes {
     ))
 }
 
-// Driver Station names are unchanged; NextFTC owns lifecycle and scheduling.
-@NextAutonomous(name = "MAIN left-020 (red)", group = "BioBuzz Main")
-class MainLeft020RedEntry : NextRoutineOpMode({ BioBuzzMainAuto(MainRoutes.LEFT_020, false) })
+@Autonomous(name = "MAIN left-020 (red)", group = "BioBuzz Main")
+class MainLeft020Red : BioBuzzMainAuto(MainRoutes.LEFT_020, false)
 
-@NextAutonomous(name = "MAIN left-020 (blue)", group = "BioBuzz Main")
-class MainLeft020BlueEntry : NextRoutineOpMode({ BioBuzzMainAuto(MainRoutes.LEFT_020, true) })
+@Autonomous(name = "MAIN left-020 (blue)", group = "BioBuzz Main")
+class MainLeft020Blue : BioBuzzMainAuto(MainRoutes.LEFT_020, true)
 
-@NextAutonomous(name = "MAIN left-034 (red)", group = "BioBuzz Main")
-class MainLeft034RedEntry : NextRoutineOpMode({ BioBuzzMainAuto(MainRoutes.LEFT_034, false) })
+@Autonomous(name = "MAIN left-034 (red)", group = "BioBuzz Main")
+class MainLeft034Red : BioBuzzMainAuto(MainRoutes.LEFT_034, false)
 
-@NextAutonomous(name = "MAIN left-034 (blue)", group = "BioBuzz Main")
-class MainLeft034BlueEntry : NextRoutineOpMode({ BioBuzzMainAuto(MainRoutes.LEFT_034, true) })
+@Autonomous(name = "MAIN left-034 (blue)", group = "BioBuzz Main")
+class MainLeft034Blue : BioBuzzMainAuto(MainRoutes.LEFT_034, true)
 
-@NextAutonomous(name = "MAIN right-004 (red)", group = "BioBuzz Main")
-class MainRight004RedEntry : NextRoutineOpMode({ BioBuzzMainAuto(MainRoutes.RIGHT_004, false) })
+@Autonomous(name = "MAIN right-004 (red)", group = "BioBuzz Main")
+class MainRight004Red : BioBuzzMainAuto(MainRoutes.RIGHT_004, false)
 
-@NextAutonomous(name = "MAIN right-004 (blue)", group = "BioBuzz Main")
-class MainRight004BlueEntry : NextRoutineOpMode({ BioBuzzMainAuto(MainRoutes.RIGHT_004, true) })
+@Autonomous(name = "MAIN right-004 (blue)", group = "BioBuzz Main")
+class MainRight004Blue : BioBuzzMainAuto(MainRoutes.RIGHT_004, true)
 
-@NextAutonomous(name = "MAIN right-022 (red)", group = "BioBuzz Main")
-class MainRight022RedEntry : NextRoutineOpMode({ BioBuzzMainAuto(MainRoutes.RIGHT_022, false) })
+@Autonomous(name = "MAIN right-022 (red)", group = "BioBuzz Main")
+class MainRight022Red : BioBuzzMainAuto(MainRoutes.RIGHT_022, false)
 
-@NextAutonomous(name = "MAIN right-022 (blue)", group = "BioBuzz Main")
-class MainRight022BlueEntry : NextRoutineOpMode({ BioBuzzMainAuto(MainRoutes.RIGHT_022, true) })
+@Autonomous(name = "MAIN right-022 (blue)", group = "BioBuzz Main")
+class MainRight022Blue : BioBuzzMainAuto(MainRoutes.RIGHT_022, true)

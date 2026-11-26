@@ -10,8 +10,7 @@ import com.pedropathing.ivy.groups.Groups.sequential
 import com.pedropathing.math.Pose
 import com.pedropathing.paths.Path
 import com.qualcomm.hardware.lynx.LynxModule
-import dev.nextftc.robot.opmode.NextAutonomous
-import org.firstinspires.ftc.teamcode.teleop.NextRoutineOpMode
+import com.qualcomm.robotcore.eventloop.opmode.Autonomous
 import com.qualcomm.robotcore.eventloop.opmode.OpMode
 import com.qualcomm.robotcore.util.RobotLog
 import java.util.function.LongSupplier
@@ -33,19 +32,21 @@ internal fun alliancePose(blue: Boolean, x: Double, y: Double, heading: Double):
 
 // region Basic autos: shoot for two seconds, then follow the exported parking line
 
+@Autonomous(name = "BasicRed Auto")
 open class BioBuzzAuto(clock: LongSupplier = LongSupplier(System::nanoTime)) : AutoOpMode(clock) {
-    private val feed = IntakeFeed(clock::getAsLong)
+    // main: Basic and preload autos feed at the shooter preset, not full power.
+    private val feed = IntakeFeed(ShooterController.DEFAULT_SHOOTER_PRESET, clock::getAsLong)
     private var feedingStarted: Long? = null
     private var driving = false
     private lateinit var path: Path
 
     override fun startingPose(): Pose =
-        PoseFactory.degrees().of(57.01798561151079, 9.221582733812928, 270.0)
+        PoseFactory.degrees().of(57.01798561151079, 9.221582733812928, 90.0)
 
+    /** main / basicred.pp: start at 90 degrees, drive the line holding a 270-degree heading. */
     protected open fun buildPath(start: Pose): Path =
-        // Keep the starting heading: parking must not introduce a turn after the shot.
-        Paths.line(start, Pose(8.96906474820144, 97.8935251798561, start.heading()))
-            .constant(start)
+        Paths.line(start, PoseFactory.degrees().of(8.96906474820144, 97.8935251798561, 270.0))
+            .constant(Math.toRadians(270.0))
 
     override fun buildRoutine(start: Pose) { path = buildPath(start) }
     override fun startRoutine() {
@@ -88,6 +89,7 @@ open class BioBuzzAuto(clock: LongSupplier = LongSupplier(System::nanoTime)) : A
 }
 
 /** Same two-second shot as BasicRed; coordinates come from basicblue.pp. */
+@Autonomous(name = "BasicBlue Auto")
 class BasicBlueAuto : BioBuzzAuto() {
     override fun startingPose(): Pose =
         PoseFactory.degrees().of(83.07841726618705, 132.19424460431654, 90.0)
@@ -100,7 +102,8 @@ class BasicBlueAuto : BioBuzzAuto() {
 
 // region Collection autos: shoot, collect, return, shoot, park
 
-class BioBuzzRed1_5(private val blue: Boolean = false) : AutoOpMode() {
+@Autonomous(name = "BioBuzzRed1.5")
+open class BioBuzzRed1_5(private val blue: Boolean = false) : AutoOpMode() {
     private lateinit var path1: Path
     private lateinit var path2: Path
     private lateinit var path3: Path
@@ -170,11 +173,14 @@ class BioBuzzRed1_5(private val blue: Boolean = false) : AutoOpMode() {
     }
 }
 
+@Autonomous(name = "BioBuzz Auto Blue")
+class BioBuzzAutoBlue : BioBuzzRed1_5(blue = true)
+
 // endregion
 
 // region Backup autos: drive one line to park, with no shooter initialization
 
-class BioBuzzBackupAuto(
+open class BioBuzzBackupAuto(
     blue: Boolean, private val startX: Double, private val startY: Double,
     private val startHeadingDeg: Double, private val endHeadingDeg: Double,
     private val parkY: Double
@@ -195,9 +201,8 @@ class BioBuzzBackupAuto(
     override fun startRoutine() { follower.follow(toPark) }
     override fun updateRoutine() {
         operation = "LOOP Pedro / Pinpoint"
+        // main: keep updating after arrival, so Pedro holds the park pose against pushes.
         follower.update()
-        // Pedro has finished settling. Avoid spending battery holding the parking pose forever.
-        if (!follower.following()) stop()
     }
 }
 
@@ -217,7 +222,7 @@ class ShootCommand(
         require(power.isFinite() && power > 0.0 && power <= 1.0)
         var finished = false
         var transferStarted: Long? = null
-        val feed = IntakeFeed(nanoTime)
+        val feed = IntakeFeed(feedPower = 1.0, nanoTime) // main: ShootCommand feeds at full power.
         fun stopAll() {
             var failure = SafeHardware.attempt(null) { intake.forceStop() }
             failure = SafeHardware.attempt(failure) { shooter.forceStop() }
@@ -230,6 +235,7 @@ class ShootCommand(
             transferStarted = null
             feed.reset()
             stopAll()
+            shooter.startBlockerControl()
             shooter.setControlMode(ControlMode.VELOCITY_LQR)
             follower.hold(follower.pose())
         }
@@ -279,10 +285,7 @@ abstract class AutoOpMode protected constructor(
     protected open fun runningStage() = "RUNNING"
 
     final override fun init() = guarded {
-        if (usesShooter()) {
-            operation = "INIT blocker"
-            safety.closeBlocker(hardwareMap, ShooterController.BLOCKER_CLOSED)
-        }
+        // The blocker servo is untouched until START, as on main.
         operation = "INIT motor setup"
         safety.prepareMotors(hardwareMap, usesShooter())
         if (usesShooter()) {
@@ -329,6 +332,7 @@ abstract class AutoOpMode protected constructor(
                 follower.stop()
                 follower.drivetrain.stop()
             }
+            if (::shooter.isInitialized) shooter.startBlockerControl()
             startRoutine()
             state = State.RUNNING
         }
@@ -406,27 +410,14 @@ abstract class AutoOpMode protected constructor(
 
 // endregion
 
-// Keep the existing Driver Station names; NextFTC owns lifecycle and scheduling.
-@NextAutonomous(name = "BasicRed Auto")
-class BioBuzzAutoEntry : NextRoutineOpMode({ BioBuzzAuto() })
+@Autonomous(name = "Backup Blue Left", group = "Backup")
+class BackupAutoBlueLeft : BioBuzzBackupAuto(true, 112.1, 7.8, -90.0, 0.0, 35.5)
 
-@NextAutonomous(name = "BasicBlue Auto")
-class BasicBlueAutoEntry : NextRoutineOpMode({ BasicBlueAuto() })
+@Autonomous(name = "Backup Blue Right", group = "Backup")
+class BackupAutoBlueRight : BioBuzzBackupAuto(true, 133.7, 74.7, 180.0, 360.0, 35.5)
 
-@NextAutonomous(name = "BioBuzzRed1.5")
-class BioBuzzRed1_5Entry : NextRoutineOpMode({ BioBuzzRed1_5(blue = false) })
+@Autonomous(name = "Backup Red Left", group = "Backup")
+class BackupAutoRedLeft : BioBuzzBackupAuto(false, 29.4, 133.7, 90.0, 180.0, 106.0)
 
-@NextAutonomous(name = "BioBuzz Auto Blue")
-class BioBuzzAutoBlueEntry : NextRoutineOpMode({ BioBuzzRed1_5(blue = true) })
-
-@NextAutonomous(name = "Backup Blue Left", group = "Backup")
-class BackupAutoBlueLeftEntry : NextRoutineOpMode({ BioBuzzBackupAuto(true, 112.1, 7.8, -90.0, 0.0, 35.5) })
-
-@NextAutonomous(name = "Backup Blue Right", group = "Backup")
-class BackupAutoBlueRightEntry : NextRoutineOpMode({ BioBuzzBackupAuto(true, 133.7, 74.7, 180.0, 360.0, 35.5) })
-
-@NextAutonomous(name = "Backup Red Left", group = "Backup")
-class BackupAutoRedLeftEntry : NextRoutineOpMode({ BioBuzzBackupAuto(false, 29.4, 133.7, 90.0, 180.0, 106.0) })
-
-@NextAutonomous(name = "Backup Red Right", group = "Backup")
-class BackupAutoRedRightEntry : NextRoutineOpMode({ BioBuzzBackupAuto(false, 7.8, 66.8, 0.0, 180.0, 106.0) })
+@Autonomous(name = "Backup Red Right", group = "Backup")
+class BackupAutoRedRight : BioBuzzBackupAuto(false, 7.8, 66.8, 0.0, 180.0, 106.0)
