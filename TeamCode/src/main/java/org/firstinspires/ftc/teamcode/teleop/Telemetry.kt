@@ -18,25 +18,40 @@ import org.firstinspires.ftc.robotcore.external.Telemetry
 
 // Telemetry and diagnostic OpModes. Called by the shared Robot loop.
 
-/** Interval between the same point in consecutive TeleOp loops, including all loop work. */
+/**
+ * Driver Station / Panels refresh period. People cannot read numbers faster than this, and
+ * every publish costs loop time (string formatting plus a network send), so control loops
+ * run many times between refreshes. The SDK's own default is 250 ms.
+ */
+const val TELEMETRY_INTERVAL_MS = 100L
+
+/** Interval between the same point in consecutive loops, including all loop work. */
 internal class LoopTiming(private val nanoTime: () -> Long = System::nanoTime) {
     private var previousNanos: Long? = null
     var intervalMs = 0.0
+        private set
+    /** Smoothed loop rate, so the telemetry row is readable at 10 refreshes per second. */
+    var averageHz = 0.0
         private set
 
     fun reset() {
         previousNanos = null
         intervalMs = 0.0
+        averageHz = 0.0
     }
 
     fun update() {
         val now = nanoTime()
         intervalMs = previousNanos?.let { (now - it).coerceAtLeast(0L) / 1_000_000.0 } ?: 0.0
         previousNanos = now
+        if (intervalMs > 0.0) {
+            val hz = 1000.0 / intervalMs
+            averageHz = if (averageHz == 0.0) hz else averageHz + 0.05 * (hz - averageHz)
+        }
     }
 }
 
-/** Match the 50 ms display interval without formatting or publishing on every control tick. */
+/** Publish at most once per [TELEMETRY_INTERVAL_MS]; skipped loops do no formatting. */
 class TelemetryRefresh @JvmOverloads constructor(
     private val nanoTime: () -> Long = System::nanoTime
 ) {
@@ -47,7 +62,7 @@ class TelemetryRefresh @JvmOverloads constructor(
     fun isDue(): Boolean {
         val now = nanoTime()
         val previous = lastRefresh
-        if (previous != null && now - previous < 50_000_000L) return false
+        if (previous != null && now - previous < TELEMETRY_INTERVAL_MS * 1_000_000L) return false
         lastRefresh = now
         return true
     }
@@ -60,7 +75,7 @@ internal class RobotTelemetry(
     nanoTime: () -> Long = System::nanoTime
 ) {
     private val refresh = TelemetryRefresh(nanoTime)
-    private val joined = JoinedTelemetry(driverStation, panels).apply { msTransmissionInterval = 50 }
+    private val joined = JoinedTelemetry(driverStation, panels).apply { msTransmissionInterval = TELEMETRY_INTERVAL_MS.toInt() }
 
     fun addData(caption: String, value: Any?) { joined.addData(caption, value) }
     fun addData(caption: String, format: String, vararg values: Any?) {
@@ -206,7 +221,7 @@ class VisionDiagnosticTeleOp : OpMode() {
 
     override fun init() = guarded("INIT camera") {
         vision = VisionSubsystem.optional(hardwareMap)
-        telemetry.msTransmissionInterval = 50
+        telemetry.msTransmissionInterval = TELEMETRY_INTERVAL_MS.toInt()
         telemetry.addData("Vision status", if (vision == null) "No configured limelight" else "Ready; START begins camera")
         telemetry.update()
     }

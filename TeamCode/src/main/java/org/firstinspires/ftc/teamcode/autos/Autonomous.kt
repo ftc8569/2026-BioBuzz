@@ -16,6 +16,7 @@ import com.qualcomm.robotcore.util.RobotLog
 import java.util.function.LongSupplier
 import org.firstinspires.ftc.teamcode.pedro.Constants
 import org.firstinspires.ftc.teamcode.teleop.TelemetryRefresh
+import org.firstinspires.ftc.teamcode.teleop.TELEMETRY_INTERVAL_MS
 import org.firstinspires.ftc.teamcode.subsystems.ShooterController
 import org.firstinspires.ftc.teamcode.subsystems.ShooterController.ControlMode
 import org.firstinspires.ftc.teamcode.teleop.SafeHardware
@@ -305,7 +306,7 @@ abstract class AutoOpMode protected constructor(
         operation = "INIT hub bulk cache"
         hubs = hardwareMap.getAll(LynxModule::class.java)
         safety.setCaching(hubs, LynxModule.BulkCachingMode.MANUAL)
-        telemetry.msTransmissionInterval = 50
+        telemetry.msTransmissionInterval = TELEMETRY_INTERVAL_MS.toInt()
         operation = "INIT voltage polling"
         if (::shooter.isInitialized) shooter.startVoltagePolling()
         state = State.READY

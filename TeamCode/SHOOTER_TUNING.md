@@ -52,7 +52,7 @@ so an inaccurate steady-speed model can leave RPM error.
 Manual and reverse controls preserve voltage-normalized power. There is no
 zero-speed motor timeout: zero RPM continues to request drive toward the target.
 Telemetry shows mode, preset, target RPM, both flywheel RPMs, motor power and feed
-readiness. Display refresh is limited to 20 Hz without skipping controller or hardware updates.
+readiness. Display refresh is limited to 10 Hz without skipping controller or hardware updates.
 
 Save chosen defaults in `ShooterLqrTuning` (in `subsystems/ShooterSubsystem.kt`); Panels fields and their owning class
 are pinned for shared settings with Sloth. Agents must not install, deploy, launch,

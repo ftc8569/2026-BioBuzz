@@ -47,7 +47,7 @@ orientation. Confirm the user's physical placement when direction is ambiguous.
 
 Read bulk-cached inputs once per loop, compute from snapshots, then write outputs.
 Clear MANUAL cache every active loop; cached readings otherwise stay stale.
-Keep the compact status and failure telemetry, publishing at its 50 ms interval.
+Keep the compact status and failure telemetry, publishing every 100 ms (`TELEMETRY_INTERVAL_MS`).
 The loop-time row is the only measure of the achieved loop rate.
 Keep existing LQR settings and the shared 0.72 preset when fixing lifecycle code.
 

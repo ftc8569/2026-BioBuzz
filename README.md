@@ -70,6 +70,16 @@ in RobotLog, and never moves before INIT reaches READY.
 Diagnostic (raw power, encoders, connection and motor profile), Shooter Tuning (match
 shooter controls with no drive or intake), Vision Diagnostic (Limelight, if configured).
 
+**Loop speed.** The loop rate is how many times per second the robot reads sensors,
+decides, and writes motors; faster loops mean tighter shooter and drive control. Most of
+each loop is spent talking to hardware, so the code bulk-reads one hub, reads Pinpoint
+once, and skips motor writes whose value has not changed. Telemetry is the other cost
+(formatting text and sending it over Wi-Fi), so it publishes only every 100 ms
+(`TELEMETRY_INTERVAL_MS` in `teleop/Telemetry.kt`); loops in between do no telemetry work.
+The `Loop (ms / avg Hz)` row (detailed view) shows the achieved rate; 100 Hz means a
+10 ms loop. The loop rate does not change camera frame rate: a Limelight processes video
+on its own computer, and the SDK's VisionPortal runs its pipeline on a separate thread.
+
 ## Driver controls
 
 | Input | Behavior |

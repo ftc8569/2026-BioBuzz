@@ -217,8 +217,7 @@ internal class DriverRobot(
             addData("Speed state", shooter.control.speedStatus)
             addData("Blocker", shooter.control.blockerStatus)
             addData("LQR commanded RPM", "%.0f", shooter.control.targetRpm)
-            addData("Loop (ms / Hz)", "%.1f / %.0f", loopTiming.intervalMs,
-                if (loopTiming.intervalMs > 0.0) 1000.0 / loopTiming.intervalMs else 0.0)
+            addData("Loop (ms / avg Hz)", "%.1f / %.0f", loopTiming.intervalMs, loopTiming.averageHz)
         }
     }
 }
