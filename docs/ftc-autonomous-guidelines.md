@@ -47,8 +47,8 @@ orientation. Confirm the user's physical placement when direction is ambiguous.
 
 Read bulk-cached inputs once per loop, compute from snapshots, then write outputs.
 Clear MANUAL cache every active loop; cached readings otherwise stay stale.
-Keep the compact status and failure telemetry, publishing at its configured interval; a mocked 10 ms
-clock test demonstrates timing logic, not an achieved 100 Hz hardware rate.
+Keep the compact status and failure telemetry, publishing at its 50 ms interval.
+The loop-time row is the only measure of the achieved loop rate.
 Keep existing LQR settings and the shared 0.72 preset when fixing lifecycle code.
 
 ## Debugging evidence
@@ -64,12 +64,12 @@ must not deploy or execute robot code in this project.
 Local checks:
 
 ```sh
-./gradlew :TeamCode:testDebugUnitTest :TeamCode:assembleDebug --console=plain
+./gradlew :TeamCode:assembleDebug --console=plain
 ```
 
 This repository has no `src/test` sources, so `./gradlew test` runs nothing.
 Treat a passing build as compile evidence only; route timing, READY guards and
-cleanup still need fake-hardware tests or on-robot validation.
+cleanup still need on-robot validation.
 
 ## Primary references reviewed
 

@@ -38,9 +38,9 @@ Open Panels > **Configurables** > **ShooterLqrTuning**:
 
 | Field | Initial value | Units / purpose |
 | --- | --- | --- |
-| kV | 0.002436 | V/RPM; steady-speed model |
-| kA | 0.000609 | V/(RPM/s); acceleration model |
-| rpmTolerance | 150 | RPM error cost scale; smaller is more aggressive |
+| kV | 0.00240 | V/RPM; steady-speed model |
+| kA | 0.00015 | V/(RPM/s); acceleration model (time constant 0.0625 s) |
+| rpmTolerance | 10 | RPM error cost scale; smaller is more aggressive |
 | voltageTolerance | 3 | Voltage cost scale; larger is more aggressive |
 
 The model defaults are estimates, not characterized robot measurements. Live edits
@@ -51,18 +51,18 @@ so an inaccurate steady-speed model can leave RPM error.
 
 Manual and reverse controls preserve voltage-normalized power. There is no
 zero-speed motor timeout: zero RPM continues to request drive toward the target.
-Telemetry shows RPM, target, LQR model, gain, requested volts, interval and frequency.
-Display refresh is limited to 20 Hz without skipping controller or hardware updates.
+Telemetry shows mode, preset, target RPM, both flywheel RPMs, motor power and feed
+readiness. Display refresh is limited to 20 Hz without skipping controller or hardware updates.
 
-Save chosen defaults in `ShooterLqrTuning.kt`; Panels fields and their owning class
+Save chosen defaults in `ShooterLqrTuning` (in `subsystems/ShooterSubsystem.kt`); Panels fields and their owning class
 are pinned for shared settings with Sloth. Agents must not install, deploy, launch,
 or run anything on the robot.
 
 ## Local checks
 
 ```sh
-./gradlew :TeamCode:testDebugUnitTest :TeamCode:assembleDebug
+./gradlew :TeamCode:assembleDebug
 ```
 
-Host checks verify controls, RPM conversion, live model edits, and the 1% transfer
-gate. They do not verify physical tuning or shooting performance.
+There are no unit tests in this branch, so a passing build proves only that the code
+compiles. Physical tuning and shooting performance need on-robot checks.

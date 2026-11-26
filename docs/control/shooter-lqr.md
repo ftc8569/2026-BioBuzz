@@ -9,11 +9,9 @@ Both auto and TeleOp import and call the same subsystem API.
 
 ## Driver controls and manual tuning
 
-The current `yatishgrandhe/manual-shooter` branch (`adb12be`) already supplies the
-hold-Y manual behavior, 0.005 preset increments and reverse priority used here.
-Those are preserved. The older `ri5w-autos`/`shreyas-josyula` PID implementation,
-Y-toggle behavior, larger preset increments and old blocker positions are not
-substituted for the current LQR settings.
+Hold-Y manual shooting, 0.005 preset steps and reverse priority are kept. Older
+branches' PID controller, Y-toggle behavior, larger preset steps and old blocker
+positions are not used.
 
 | Control | Result |
 | --- | --- |
@@ -33,8 +31,8 @@ full (1.0) feed power, as on main. G1 A retains its intake-stop priority.
 
 `Shooter Tuning` is a new diagnostic in `teleop/Telemetry.kt` that reuses the
 **same** `ShooterSubsystem`, `ShooterControls`, LQR implementation and telemetry.
-It only requires `shooter1`, `shooter2` and `blocker`. INIT keeps outputs stopped
-while allowing D-pad preset adjustment; START enables the held-button controls
+It only requires `shooter1`, `shooter2` and `blocker`. INIT keeps the flywheels stopped
+and leaves the blocker untouched while allowing D-pad preset adjustment; START enables the held-button controls
 above. It does not run an intake or position hold. Driver Station and Panels show
 both RPMs, commanded power, mode, preset, target and feed readiness in six short
 status rows, plus three tuning instructions. Live parameters remain in Panels
@@ -43,9 +41,9 @@ Changes to `ShooterLqrTuning` in Panels apply on the next LQR update, as in matc
 TeleOp. Preset adjustments are local to this OpMode run; autos remain at 0.72.
 
 Every active loop refreshes each hub's MANUAL cache once. STOP, partial INIT and
-loop failures independently stop both motors, close the blocker and restore cache
-modes. Failure telemetry includes the phase and exception; RobotLog retains the
-stack. This entry was tested only with fake hardware, not run on the robot.
+loop failures independently stop both motors, close the blocker (if START already
+enabled it) and restore cache modes. Failure telemetry includes the phase and
+exception; RobotLog retains the stack. Not yet run on the robot.
 
 The older `Blocker Diagnostic` and `Shooter Motor Diagnostic` now use the same
 current blocker endpoints as match shooting: **closed 0.78, open 0.65**. The raw
@@ -83,6 +81,8 @@ An inaccurate kV can leave steady-state RPM error because there is no integrator
 
 ## Local verification
 
-The historical regression suite, run from a temporary folder during branch integration, compares the gain with an independent iterative Riccati solution and simulates spin-up and a shot disturbance with varying loop intervals and 10–14 V saturation. Integration tests cover voltage compensation, live configuration, invalid model/feedback, manual and reverse operation, mode changes, autonomous shooting, and cached hardware boundaries. Simulation verifies the assumed model; no code was deployed or executed on the robot.
+This branch has no unit tests; `./gradlew :TeamCode:assembleDebug` checks only that
+the code compiles. The LQR gain and spin-up behavior have not been checked against
+an independent solver or measured on the robot.
 
 References: [WPILib flywheel state-space formulation](https://docs.wpilib.org/en/latest/docs/software/advanced-controls/state-space/state-space-intro.html), [MIT discrete-time LQR derivation](https://underactuated.csail.mit.edu/lqr.html).
