@@ -1,7 +1,7 @@
 plugins {
-    id 'com.android.application' version '9.3.3' apply false
-    id 'com.android.library' version '9.3.3' apply false
-    // Kotlin 2.4.21 supports Gradle 9.7; AGP 9.3.3 includes the JDK 17 lint fix.
+    id 'com.android.application' version '9.5.3' apply false
+    id 'com.android.library' version '9.5.3' apply false
+    // Gradle 9.9.2, AGP 9.5.3 and Kotlin 2.4.21: latest stable releases as of Nov 2026.
     // Keep the legacy Android DSL for the installed Sloth plugin.
     // https://kotlinlang.org/docs/gradle-configure-project.html
     id 'org.jetbrains.kotlin.android' version '2.4.21' apply false

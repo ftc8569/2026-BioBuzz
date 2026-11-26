@@ -46,13 +46,13 @@ repositories {
 dependencies {
     implementation project(':FtcRobotController')
     implementation 'dev.frozenmilk.sinister:Sloth:0.3.2'
+    // NextFTC: OpMode lifecycle, components, commands and gamepad bindings.
+    implementation 'dev.nextftc:ftc:1.1.0'
     // Panels with individual plugins so camera support remains disabled.
-    implementation 'com.bylazar:panels:1.0.7'
+    implementation 'com.bylazar:panels:1.0.9'
     implementation 'com.bylazar:opmodecontrol:1.0.5'
     implementation 'com.bylazar:telemetry:1.0.7'
     implementation 'com.bylazar:configurables:1.0.7'
     implementation 'com.bylazar:graph:1.0.6'
     implementation 'com.bylazar:field:1.0.10'
-    testImplementation 'junit:junit:4.13.2'
-    testImplementation 'org.mockito:mockito-core:5.14.2'
 }
