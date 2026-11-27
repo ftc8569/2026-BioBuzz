@@ -1,96 +1,60 @@
 package org.firstinspires.ftc.teamcode.teleop
 
-import org.firstinspires.ftc.teamcode.subsystems.ShooterSubsystem
-import org.firstinspires.ftc.teamcode.subsystems.ShooterController
 import com.bylazar.telemetry.JoinedTelemetry
 import java.util.Locale
 import org.firstinspires.ftc.robotcore.external.Telemetry
+import org.firstinspires.ftc.teamcode.subsystems.ShooterSubsystem
 
-// Shared telemetry: refresh clock, loop timing and the shooter rows. Diagnostics are in Diagnostics.kt.
-
-/**
- * Driver Station / Panels refresh period. People cannot read numbers faster than this, and
- * every publish costs loop time (string formatting plus a network send), so control loops
- * run many times between refreshes. The SDK's own default is 250 ms.
- */
+/** Telemetry refresh period. Loops in between skip all telemetry work (the SDK default is 250 ms). */
 const val TELEMETRY_INTERVAL_MS = 100L
 
-/** Interval between the same point in consecutive loops, including all loop work. */
+/** Time between loops and a smoothed loop rate for the "Loop" row. */
 internal class LoopTiming(private val nanoTime: () -> Long = System::nanoTime) {
-    private var previousNanos: Long? = null
-    var intervalMs = 0.0
-        private set
-    /** Smoothed loop rate, so the telemetry row is readable at 10 refreshes per second. */
-    var averageHz = 0.0
-        private set
+    private var last: Long? = null
+    var intervalMs = 0.0; private set
+    var averageHz = 0.0; private set
 
-    fun reset() {
-        previousNanos = null
-        intervalMs = 0.0
-        averageHz = 0.0
-    }
-
+    fun reset() { last = null; intervalMs = 0.0; averageHz = 0.0 }
     fun update() {
         val now = nanoTime()
-        intervalMs = previousNanos?.let { (now - it).coerceAtLeast(0L) / 1_000_000.0 } ?: 0.0
-        previousNanos = now
-        if (intervalMs > 0.0) {
-            val hz = 1000.0 / intervalMs
-            averageHz = if (averageHz == 0.0) hz else averageHz + 0.05 * (hz - averageHz)
-        }
+        last?.let { if (now > it) intervalMs = (now - it) / 1e6 }
+        last = now
+        if (intervalMs > 0.0) averageHz += if (averageHz == 0.0) 1000.0 / intervalMs else 0.05 * (1000.0 / intervalMs - averageHz)
     }
 }
 
-/** Publish at most once per [TELEMETRY_INTERVAL_MS]; skipped loops do no formatting. */
-class TelemetryRefresh @JvmOverloads constructor(
-    private val nanoTime: () -> Long = System::nanoTime
-) {
-    private var lastRefresh: Long? = null
-
-    fun reset() { lastRefresh = null }
-
+/** True at most once per [TELEMETRY_INTERVAL_MS]. */
+class TelemetryRefresh(private val nanoTime: () -> Long = System::nanoTime) {
+    private var last: Long? = null
+    fun reset() { last = null }
     fun isDue(): Boolean {
         val now = nanoTime()
-        val previous = lastRefresh
-        if (previous != null && now - previous < TELEMETRY_INTERVAL_MS * 1_000_000L) return false
-        lastRefresh = now
+        if (last?.let { now - it < TELEMETRY_INTERVAL_MS * 1_000_000L } == true) return false
+        last = now
         return true
     }
 }
 
-/** One display clock and one formatting pass for both Driver Station and Panels. */
-internal class RobotTelemetry(
-    driverStation: Telemetry,
-    panels: Telemetry,
-    nanoTime: () -> Long = System::nanoTime
-) {
+/** Driver Station and Panels together, formatted once and published at most every 100 ms. */
+internal class RobotTelemetry(driverStation: Telemetry, panels: Telemetry, nanoTime: () -> Long = System::nanoTime) {
     private val refresh = TelemetryRefresh(nanoTime)
-    private val joined = JoinedTelemetry(driverStation, panels).apply { msTransmissionInterval = TELEMETRY_INTERVAL_MS.toInt() }
+    private val out = JoinedTelemetry(driverStation, panels).apply { msTransmissionInterval = TELEMETRY_INTERVAL_MS.toInt() }
 
-    fun addData(caption: String, value: Any?) { joined.addData(caption, value) }
+    fun addData(caption: String, value: Any?) { out.addData(caption, value) }
     fun addData(caption: String, format: String, vararg values: Any?) {
-        // Any selects the value overload, avoiding a second formatting pass per destination.
-        val text: Any = if (values.isEmpty()) format else String.format(Locale.US, format, *values)
-        joined.addData(caption, text)
+        out.addData(caption, String.format(Locale.US, format, *values) as Any)
     }
-    fun publish(build: RobotTelemetry.() -> Unit) {
-        if (!refresh.isDue()) return
-        build()
-        joined.update()
-    }
-    fun reset() { refresh.reset() }
-    fun clear() { refresh.reset(); joined.clearAll() }
+    fun publish(build: RobotTelemetry.() -> Unit) { if (refresh.isDue()) { build(); out.update() } }
+    fun reset() = refresh.reset()
+    fun clear() { refresh.reset(); out.clearAll() }
 }
 
-/** Display cached shooter state without reading hardware or changing controller state. */
+/** Shooter rows from values already read this loop (no hardware access). */
 internal fun RobotTelemetry.reportShooter(shooter: ShooterSubsystem, controls: ShooterControls) {
-    val shot = shooter.control
-    addData("Mode", if (controls.mode == ShooterController.ControlMode.MANUAL_POWER) "Manual" else "LQR")
-    addData("Preset", "%.3f", controls.preset)
-    val target = controls.velocityTargetRpm
-    if (target == null) addData("Target RPM", "Manual power")
-    else addData("Target RPM", "%.0f", target)
+    val lqr = controls.mode == ShooterSubsystem.Mode.LQR
+    addData("Preset / target RPM", if (lqr) "%.3f / %.0f" else "%.3f / manual power",
+        controls.preset, controls.preset * ShooterSubsystem.MAX_MOTOR_RPM)
     addData("RPM 1 / 2", "%.0f / %.0f", shooter.rpm[0], shooter.rpm[1])
-    addData("Motor power", "%.2f", shooter.flywheelPower)
-    addData("Feed", shot.feedReadiness)
+    addData("Motor power", "%.2f", shooter.power)
+    addData("Shooter", shooter.status)
 }

@@ -16,8 +16,9 @@ import java.util.function.LongSupplier
 import org.firstinspires.ftc.teamcode.pedro.Constants
 import org.firstinspires.ftc.teamcode.teleop.TelemetryRefresh
 import org.firstinspires.ftc.teamcode.teleop.TELEMETRY_INTERVAL_MS
-import org.firstinspires.ftc.teamcode.subsystems.ShooterController
-import org.firstinspires.ftc.teamcode.subsystems.ShooterController.ControlMode
+import org.firstinspires.ftc.teamcode.subsystems.ShooterSubsystem.Companion.DEFAULT_SHOOTER_PRESET
+import org.firstinspires.ftc.teamcode.subsystems.ShooterSubsystem.Companion.MAX_MOTOR_RPM
+import org.firstinspires.ftc.teamcode.subsystems.ShooterSubsystem.Mode
 import org.firstinspires.ftc.teamcode.teleop.SafeHardware
 import org.firstinspires.ftc.teamcode.teleop.IntakeFeed
 import org.firstinspires.ftc.teamcode.subsystems.IntakeSubsystem
@@ -35,7 +36,7 @@ internal fun alliancePose(blue: Boolean, x: Double, y: Double, heading: Double):
 @Autonomous(name = "BasicRed Auto")
 open class BioBuzzAuto(clock: LongSupplier = LongSupplier(System::nanoTime)) : AutoOpMode(clock) {
     // main: Basic and preload autos feed at the shooter preset, not full power.
-    private val feed = IntakeFeed(ShooterController.DEFAULT_SHOOTER_PRESET, clock::getAsLong)
+    private val feed = IntakeFeed(DEFAULT_SHOOTER_PRESET, clock::getAsLong)
     private var feedingStarted: Long? = null
     private var driving = false
     private lateinit var path: Path
@@ -64,8 +65,8 @@ open class BioBuzzAuto(clock: LongSupplier = LongSupplier(System::nanoTime)) : A
             return
         }
         operation = "LOOP shooter / feed"
-        val preset = ShooterController.DEFAULT_SHOOTER_PRESET
-        shooter.updateShot(preset, ControlMode.VELOCITY_LQR)
+        val preset = DEFAULT_SHOOTER_PRESET
+        shooter.update(preset, Mode.LQR)
         val power = feed.power(shooter, preset)
         intake.setPower(power)
         if (power <= 0.0) { feedingStarted = null; return }
@@ -73,7 +74,7 @@ open class BioBuzzAuto(clock: LongSupplier = LongSupplier(System::nanoTime)) : A
         val start = feedingStarted ?: now.also { feedingStarted = it }
         // Count actual feeding time, after the RPM gate and blocker opening delay.
         if (now - start < 2_000_000_000L) return
-        shooter.setFlywheelPower(0.0)
+        shooter.update(0.0, Mode.LQR)
         intake.setPower(0.0)
         operation = "LOOP begin parking path"
         follower.follow(path)
@@ -81,9 +82,9 @@ open class BioBuzzAuto(clock: LongSupplier = LongSupplier(System::nanoTime)) : A
     }
 
     override fun reportTelemetry() {
-        telemetry.addData("Shooter target RPM", shooter.control.targetRpm)
+        telemetry.addData("Shooter target RPM", shooter.targetRpm)
         telemetry.addData("RPM 1 / 2", "%.0f / %.0f", shooter.rpm[0], shooter.rpm[1])
-        telemetry.addData("Feed latched", shooter.control.feedReady)
+        telemetry.addData("Shooter", shooter.status)
         super.reportTelemetry()
     }
 }
@@ -217,7 +218,7 @@ class ShootCommand(
     private val follower: Follower,
     private val shooter: ShooterSubsystem,
     private val intake: IntakeSubsystem,
-    private val power: Double = ShooterController.DEFAULT_SHOOTER_PRESET,
+    private val power: Double = DEFAULT_SHOOTER_PRESET,
     private val nanoTime: () -> Long = System::nanoTime
 ) : Command() {
     private var finished = false
@@ -236,13 +237,12 @@ class ShootCommand(
         feed.reset()
         stopAll()
         shooter.startBlockerControl()
-        shooter.setControlMode(ControlMode.VELOCITY_LQR)
         follower.hold(follower.pose())
     }
 
     override fun update() {
         if (finished) return
-        shooter.updateShot(power, ControlMode.VELOCITY_LQR)
+        shooter.update(power, Mode.LQR)
         val transferPower = feed.power(shooter, power)
         val now = nanoTime()
         if (transferPower > 0.0) {
@@ -329,7 +329,7 @@ abstract class AutoOpMode protected constructor(
             operation = "INIT telemetry"
             telemetry.addData("Auto stage", state)
             if (::shooter.isInitialized) telemetry.addData("Shooter target RPM",
-                ShooterController.DEFAULT_SHOOTER_PRESET * ShooterController.MAX_MOTOR_RPM)
+                DEFAULT_SHOOTER_PRESET * MAX_MOTOR_RPM)
             telemetry.update()
         }
     }

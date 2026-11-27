@@ -184,10 +184,7 @@ internal class DriverRobot(
 
     private fun updateMechanisms() {
         shooterPower = shooterControls.requestedPower(g1.left_bumper, g1.right_bumper)
-        shooter.setControlMode(shooterControls.mode)
-        if (shooterPower > 0.0) shooter.updateShot(shooterPower, shooterControls.mode)
-        else shooter.setFlywheelPower(shooterPower)
-        shooter.setManualBlockerOpen(manualBlocker)
+        shooter.update(shooterPower, shooterControls.mode, manualBlocker)
         val manualIntake = when {
             g1.right_trigger > 0.05 -> g1.right_trigger.toDouble()
             g1.left_trigger > 0.05 -> -g1.left_trigger.toDouble()
@@ -195,7 +192,6 @@ internal class DriverRobot(
         }
         intakePower = intakeFeed.power(
             shooter, shooterPower, stop = g1.a, manualPower = manualIntake,
-            manualBlockerOpen = manualBlocker,
             minimumPower = if (pollen.collecting) 1.0
                 else driveIntakeControls.minimumPower(drive.commandedPowerMagnitude)
         )
@@ -223,9 +219,7 @@ internal class DriverRobot(
             headingError?.let { addData("Heading error (deg)", "%.1f", Math.toDegrees(it)) }
             addData("Intake", "%.2f; assist %s (G1 left-stick click)", intakePower,
                 if (driveIntakeControls.enabled) "on" else "off")
-            addData("Speed state", shooter.control.speedStatus)
-            addData("Blocker", shooter.control.blockerStatus)
-            addData("LQR commanded RPM", "%.0f", shooter.control.targetRpm)
+            addData("Blocker", if (shooter.blockerOpen) "open" else "closed")
             addData("Loop (ms / avg Hz)", "%.1f / %.0f", loopTiming.intervalMs, loopTiming.averageHz)
         }
     }
@@ -248,7 +242,7 @@ internal class RobotHardware(map: HardwareMap, nanoTime: () -> Long = System::na
             safety.prepareMotors(map, true)
             drive = DriveSubsystem(map).apply { enablePhasedIo() }
             intake = IntakeSubsystem(map).apply { enablePhasedIo() }
-            shooter = ShooterSubsystem(map, nanoTime).apply { enablePhasedIo() }
+            shooter = ShooterSubsystem(map, nanoTime)
             safety.onStop { shooter.forceStop() }
             safety.onStop { shooter.stopVoltagePolling() }
             pinpoint = PinpointLocalizer(map, Constants.localizerConfig)
@@ -276,14 +270,12 @@ internal class RobotHardware(map: HardwareMap, nanoTime: () -> Long = System::na
     /** getBulkData refreshes the MANUAL cache once per loop, then sensors read cached values. */
     fun read() {
         feedbackHubs.forEach { it.bulkData }
-        shooter.beginFrame()
         pinpoint.update()
         location.capture(pinpoint.state())
     }
 
     fun write() {
         drive.commitOutputs()
-        shooter.commitOutputs()
         intake.commitOutputs()
     }
 

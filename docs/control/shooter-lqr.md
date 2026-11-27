@@ -1,9 +1,9 @@
 # Shooter LQR
 
-The velocity shooter uses a one-state discrete LQR instead of FTCLib PIDF. Flywheel 1's measured RPM is the state; both motors receive the same voltage command. Manual shooting, reverse, preset RPM conversion, 1% readiness tolerance and readiness latching are preserved. TeleOp uses its existing once-per-frame cached hardware inputs and final output commit. No additional hardware reads or robot-side characterization routines were added.
+The velocity shooter uses a one-state discrete LQR instead of FTCLib PIDF. Flywheel 1's measured RPM is the state; both motors receive the same voltage command. Manual shooting, reverse, preset RPM conversion, 1% readiness tolerance and readiness latching are preserved. Each loop calls `ShooterSubsystem.update(power, mode, manualBlocker)` once: it reads the bulk-cached encoder velocity, runs the LQR and writes only outputs that changed. No additional hardware reads or robot-side characterization routines were added.
 
-`subsystems/ShooterSubsystem.kt` contains the actual motor/blocker implementation,
-hardware-free `ShooterController`, LQR math, live tuning and sampled feedback.
+`subsystems/ShooterSubsystem.kt` contains the whole shooter in one class (motors,
+blocker, feed readiness), plus `FlywheelLqr`, `ShooterLqrTuning` and the battery reader.
 `teleop/Shooter.kt` contains only the shared button controls and preset adjustment.
 Both auto and TeleOp import and call the same subsystem API.
 
@@ -75,7 +75,7 @@ The user approved estimated defaults. These have **not** been identified from ro
 | rpmTolerance | 10 RPM | LQR state-error cost scale; smaller means stronger correction |
 | voltageTolerance | 3 V | LQR control-effort cost scale; larger allows stronger correction |
 
-The cost tolerances do not change the 1% gate-readiness threshold. Live Panels changes take effect on the next velocity-control update; all four parameters must be finite and strictly positive. The old ShooterPidTuning fields have been removed. The two modes are VELOCITY_LQR and MANUAL_POWER; the unused PID compatibility alias has been removed.
+The cost tolerances do not change the 1% gate-readiness threshold. Live Panels changes take effect on the next velocity-control update; all four parameters must be finite and strictly positive. The old ShooterPidTuning fields have been removed. The two modes are `Mode.LQR` and `Mode.MANUAL`; the unused PID compatibility alias has been removed.
 
 An inaccurate kV can leave steady-state RPM error because there is no integrator. Replace kV/kA with fitted values from existing voltage, RPM and timestamp logs when available: fit V = kV*RPM + kA*dRPM/dt. A steady operating point estimates kV = V/RPM; a voltage step estimates the time constant (time to 63.2% of the total speed change), giving kA = timeConstant*kV. Use actual applied voltage after saturation. These estimates describe the complete installed mechanism, including both motors and its load. They are not a claim of measured performance.
 

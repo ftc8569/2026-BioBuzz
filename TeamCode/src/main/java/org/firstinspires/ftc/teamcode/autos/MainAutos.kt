@@ -10,8 +10,8 @@ import kotlin.math.cos
 import kotlin.math.hypot
 import kotlin.math.sin
 import org.firstinspires.ftc.teamcode.teleop.IntakeFeed
-import org.firstinspires.ftc.teamcode.subsystems.ShooterController
-import org.firstinspires.ftc.teamcode.subsystems.ShooterController.ControlMode
+import org.firstinspires.ftc.teamcode.subsystems.ShooterSubsystem.Companion.DEFAULT_SHOOTER_PRESET
+import org.firstinspires.ftc.teamcode.subsystems.ShooterSubsystem.Mode
 
 /** The ri5w-autos FIFO route runner, using the current controller and guarded hardware lifecycle. */
 open class BioBuzzMainAuto(
@@ -19,7 +19,7 @@ open class BioBuzzMainAuto(
     clock: LongSupplier = LongSupplier(System::nanoTime)
 ) : AutoOpMode(clock) {
     // ri5w-autos: MAIN routes feed at the shooter preset.
-    private val feed = IntakeFeed(ShooterController.DEFAULT_SHOOTER_PRESET, clock::getAsLong)
+    private val feed = IntakeFeed(DEFAULT_SHOOTER_PRESET, clock::getAsLong)
     private var index = -1
     private var started = 0L
     private var entered = 0L
@@ -87,9 +87,8 @@ open class BioBuzzMainAuto(
         val shooting = step.type == StepType.SHOOT
         val collecting = step.intake && !shooting
         val parking = index == route.steps.lastIndex
-        val preset = ShooterController.DEFAULT_SHOOTER_PRESET
-        if (collecting || parking) shooter.setFlywheelPower(0.0)
-        else shooter.updateShot(preset, ControlMode.VELOCITY_LQR)
+        val preset = DEFAULT_SHOOTER_PRESET
+        shooter.update(if (collecting || parking) 0.0 else preset, Mode.LQR)
         val power = when {
             shooting -> feed.power(shooter, preset)
             collecting -> 1.0

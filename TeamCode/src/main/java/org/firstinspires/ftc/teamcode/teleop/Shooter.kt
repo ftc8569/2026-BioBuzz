@@ -2,32 +2,27 @@ package org.firstinspires.ftc.teamcode.teleop
 
 import dev.nextftc.bindings.button
 import kotlin.math.roundToInt
-import org.firstinspires.ftc.teamcode.subsystems.ShooterController
-import org.firstinspires.ftc.teamcode.subsystems.ShooterController.ControlMode
+import org.firstinspires.ftc.teamcode.subsystems.ShooterSubsystem
+import org.firstinspires.ftc.teamcode.subsystems.ShooterSubsystem.Mode
 
-/** Shared match/tuner controls: hold Y for manual power, release to return to LQR.
- * One D-pad press changes 0.005 (22.5 RPM in LQR); reverse always wins.
- */
+/** Shooter buttons: hold manual for manual power; D-pad steps the preset by 0.005 (22.5 RPM). */
 internal class ShooterControls {
-    private var presetSteps = (ShooterController.DEFAULT_SHOOTER_PRESET / 0.005).roundToInt()
+    private var steps = (ShooterSubsystem.DEFAULT_SHOOTER_PRESET / 0.005).roundToInt()
     private var manualHeld: () -> Boolean = { false }
-    val preset: Double get() = presetSteps * 0.005
-    val mode: ControlMode get() = if (manualHeld()) ControlMode.MANUAL_POWER else ControlMode.VELOCITY_LQR
-    val velocityTargetRpm: Double?
-        get() = if (mode == ControlMode.VELOCITY_LQR) preset * ShooterController.MAX_MOTOR_RPM else null
+    val preset: Double get() = steps * 0.005
+    val mode: Mode get() = if (manualHeld()) Mode.MANUAL else Mode.LQR
 
-    /** NextFTC bindings: one preset step per press; pressing both D-pad directions does nothing. */
+    /** NextFTC bindings: one step per press; pressing both directions does nothing. */
     fun bind(manual: () -> Boolean, up: () -> Boolean, down: () -> Boolean) {
         manualHeld = manual
-        button { up() } whenBecomesTrue { if (!down()) step(1) }
-        button { down() } whenBecomesTrue { if (!up()) step(-1) }
+        button { up() } whenBecomesTrue { if (!down()) steps = (steps + 1).coerceAtMost(200) }
+        button { down() } whenBecomesTrue { if (!up()) steps = (steps - 1).coerceAtLeast(0) }
     }
 
-    private fun step(by: Int) { presetSteps = (presetSteps + by).coerceIn(0, 200) }
-
-    fun requestedPower(reverse: Boolean, velocityShoot: Boolean): Double = when {
+    /** Reverse wins; then manual or LQR shooting at the preset; otherwise off. */
+    fun requestedPower(reverse: Boolean, lqrShoot: Boolean): Double = when {
         reverse -> -0.8
-        mode == ControlMode.MANUAL_POWER || velocityShoot -> preset
+        mode == Mode.MANUAL || lqrShoot -> preset
         else -> 0.0
     }
 }

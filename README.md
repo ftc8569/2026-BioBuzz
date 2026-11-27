@@ -55,8 +55,8 @@ START closes it (0.78); it opens (0.65) only when feeding is allowed.
 
 **Shooter (LQR).** The preset (0.72) sets a target of preset × 4500 RPM. Each loop the
 LQR computes volts = kV × target + K × (target − flywheel 1 RPM); both motors get that
-voltage scaled by battery voltage (sampled 1 Hz idle, 4 Hz while spinning, on a
-background thread). Feeding unlocks once flywheel 1 is within 1 % and stays unlocked
+voltage scaled by battery voltage (sampled 4 times a second on a background
+thread). Feeding unlocks once flywheel 1 is within 1 % and stays unlocked
 until the shot is released. Hold Y for manual power instead: no RPM regulation, feed
 unlocks after 3 s. `kV`, `kA` and the LQR costs are live-tunable in Panels
 (Configurables › ShooterLqrTuning).

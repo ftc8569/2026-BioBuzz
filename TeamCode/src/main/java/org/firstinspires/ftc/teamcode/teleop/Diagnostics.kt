@@ -11,8 +11,8 @@ import com.qualcomm.robotcore.hardware.DcMotorEx
 import com.qualcomm.robotcore.hardware.DcMotorSimple
 import com.qualcomm.robotcore.hardware.Servo
 import com.qualcomm.robotcore.util.RobotLog
-import org.firstinspires.ftc.teamcode.subsystems.ShooterController.Companion.BLOCKER_CLOSED
-import org.firstinspires.ftc.teamcode.subsystems.ShooterController.Companion.BLOCKER_OPEN
+import org.firstinspires.ftc.teamcode.subsystems.ShooterSubsystem.Companion.BLOCKER_CLOSED
+import org.firstinspires.ftc.teamcode.subsystems.ShooterSubsystem.Companion.BLOCKER_OPEN
 import org.firstinspires.ftc.teamcode.subsystems.ShooterSubsystem
 import org.firstinspires.ftc.teamcode.subsystems.VisionSubsystem
 
@@ -169,7 +169,6 @@ class ShooterTuningTeleOp : NextFTCOpMode() {
         shooter = ShooterSubsystem(hardwareMap).also {
             safety.onStop { it.forceStop() }
             safety.onStop { it.stopVoltagePolling() }
-            it.enablePhasedIo()
         }
         display = RobotTelemetry(telemetry, PanelsTelemetry.ftcTelemetry)
         // D-pad preset works during INIT; manual mode (Y) only after START, as before.
@@ -184,12 +183,8 @@ class ShooterTuningTeleOp : NextFTCOpMode() {
     override fun onUpdate() = guarded("LOOP") {
         val device = shooter?.takeIf { started } ?: return@guarded
         hubs.forEach { it.clearBulkCache() } // One owner and one invalidation per active loop.
-        device.beginFrame()
-        val power = controls.requestedPower(pads.g1.left_bumper, pads.g1.right_bumper)
-        device.setControlMode(controls.mode)
-        if (power > 0.0) device.updateShot(power, controls.mode) else device.setFlywheelPower(power)
-        device.setManualBlockerOpen(pads.g1.b || pads.g2.b)
-        device.commitOutputs()
+        device.update(controls.requestedPower(pads.g1.left_bumper, pads.g1.right_bumper), controls.mode,
+            manualBlocker = pads.g1.b || pads.g2.b)
         report()
     }
     private fun report() {
